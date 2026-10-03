@@ -476,6 +476,36 @@ export class ChatStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent, Json
     return result;
   }
 
+  encodeError(input: {
+    readonly origin: string;
+    readonly code: string;
+    readonly message: string;
+    readonly details: unknown;
+  }): JsonObject[] {
+    const errorDetails =
+      input.details && typeof input.details === "object" ? { details: input.details } : {};
+    const errorPayload: JsonObject = {
+      error: {
+        origin: input.origin,
+        code: input.code,
+        message: input.message,
+        type: input.code,
+        ...errorDetails,
+      },
+      error_type: input.code,
+      error_message: input.message,
+    };
+    const errorChunk: JsonObject = {
+      ...this.withBase(
+        [{ index: 0, delta: {}, finish_reason: "error" }],
+        null,
+        this.configuredObfuscation,
+      ),
+      ...errorPayload,
+    };
+    return [errorPayload, errorChunk];
+  }
+
   finish(): JsonObject[] {
     const result: JsonObject[] = [];
     if (this.terminalState === undefined && !this.emittedAny) {

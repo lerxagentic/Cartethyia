@@ -213,18 +213,23 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     created: Date.now() / 1000,
     include_usage: canonicalRequest.generation_controls["extension:include_usage"] === true,
   };
-  // Prime the very first upstream event BEFORE committing the HTTP 200
-  // response (which flushes headers). If candidate 0 cannot even produce
-  // its first event, the error propagates to the outer candidate loop
-  // (which advances to the next candidate) instead of firing inside
-  // `start` after the response was already returned.
+  // Prime upstream events BEFORE committing the HTTP 200 response (which
+  // flushes headers). The pull loop itself lives below, after the
+  // client-visibility helper it needs: we pull until at least one
+  // client-visible event (content delta, tool call, or complete terminal) or
+  // until the stream produces a failure/EOF. If candidate 0 cannot produce
+  // client-visible content or immediately errors/ends empty, we throw a
+  // GatewayError so the outer attempt loop can cleanly fail over to the next
+  // candidate without having sent a premature 200 OK text/event-stream with
+  // zero chunks.
   let iterator = iterable[Symbol.asyncIterator]();
   // Mark the moment we actually pull from the upstream adapter; this is
   // the zero point for time-to-first-token.
   state.upstreamDispatchStartedAtMs = Date.now();
-  const first: IteratorResult<CanonicalEvent> = await iterator.next();
+  const primedEvents: CanonicalEvent[] = [];
+  let iteratorDone = false;
   // Shared streaming state and helpers lifted into the closure so
-  // `start` seeds the primed event and `pull` demand-drives the rest:
+  // `start` seeds the primed events and `pull` demand-drives the rest:
   // the runtime only calls `pull` when the consumer has drained its
   // queue (desiredSize > 0), giving natural backpressure without the
   // old 4ms busy-poll loop.
@@ -235,8 +240,9 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
   let firstContentDeltaAtMs: number | undefined;
   let lastEventAtMs: number | undefined;
   // Any upstream event (even surface-invisible) proves liveness for
-  // watchdog bound selection.
-  let sawUpstreamActivity = false;
+  // watchdog bound selection. The priming loop already pulled real
+  // upstream events, so liveness starts true when anything was primed.
+  let sawUpstreamActivity = primedEvents.length > 0;
   // Canonical events streamed to the client; captured as the response
   // body for telemetry so streaming tool calls/text are traceable.
   const streamedEvents: CanonicalEvent[] = [];
@@ -274,8 +280,7 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
   const recoverableResponsesPrelude = candidate.wire_family === "responses";
   let clientVisibleEvent = false;
   let preContentRetryCount = 0;
-  const isClientVisibleEvent = (event: CanonicalEvent): boolean => {
-    if (event.type === "tool_call_delta" || event.type === "tool_result") return true;
+  const isClientVisibleEvent = (event: CanonicalEvent): boolean => {    if (event.type === "tool_call_delta" || event.type === "tool_result") return true;
     if (event.type === "content_delta") {
       // Extension payloads carry no client-renderable content. Reasoning
       // deltas do: they drive the reasoning pane, and withholding them
@@ -286,6 +291,54 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     }
     return event.type === "terminal" && event.state === "complete";
   };
+  // Prime upstream events BEFORE committing the HTTP 200 response (which
+  // flushes headers): pull until at least one client-visible event (content
+  // delta, tool call, or complete terminal) or until the stream produces a
+  // failure/EOF. If candidate 0 cannot produce client-visible content or
+  // immediately errors/ends empty, we throw a GatewayError so the outer
+  // attempt loop can cleanly fail over to the next candidate without having
+  // sent a premature 200 OK text/event-stream with zero chunks.
+  while (!iteratorDone) {
+    const next = await iterator.next();
+    if (next.done) {
+      iteratorDone = true;
+      break;
+    }
+    const event = next.value;
+    primedEvents.push(event);
+    if (event.type === "error") {
+      throw new GatewayError(
+        "transport_unavailable",
+        502,
+        event.message || "upstream stream error before first chunk",
+        { category: event.category },
+        "upstream",
+      );
+    }
+    if (event.type === "terminal" && event.state === "failed") {
+      const terminalErr = terminalFailure(event);
+      if (terminalErr) throw terminalErr;
+      throw new GatewayError(
+        "transport_unavailable",
+        502,
+        "upstream stream failed before first chunk",
+        {},
+        "upstream",
+      );
+    }
+    if (isClientVisibleEvent(event)) {
+      break;
+    }
+  }
+  if (primedEvents.length === 0 || !primedEvents.some(isClientVisibleEvent)) {
+    throw new GatewayError(
+      "transport_unavailable",
+      502,
+      "upstream stream ended before producing any content",
+      {},
+      "upstream",
+    );
+  }
   const pushEncodedEvent = (
     event: CanonicalEvent & { timestamp: number },
     controller: ReadableStreamDefaultController<Uint8Array>,
@@ -517,7 +570,12 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
         if (controller.desiredSize !== null && controller.desiredSize > 0)
           controller.enqueue(KEEPALIVE_COMMENT_BYTES);
       }, CLIENT_SSE_KEEPALIVE_INTERVAL_MS);
-      if (!first.done) enqueueEvent(first.value, controller);
+      for (const event of primedEvents) {
+        enqueueEvent(event, controller);
+      }
+      if (iteratorDone) {
+        void finalizeStream(controller);
+      }
     },
     async pull(controller) {
       pullActive = true;
