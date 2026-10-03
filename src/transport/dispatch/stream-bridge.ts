@@ -34,8 +34,9 @@ export function createDispatchStreamEncoder(
     return {
       push: (event) => encoder.push(event).map(formatSseData),
       finish: () => [...encoder.finish().map(formatSseData), formatSseData("[DONE]")],
-      encodeError: ({ origin, code, message, details }) => [
-        formatSseData({ error: { origin, code, message, type: code, details } }),
+      encodeError: (input) => [
+        ...encoder.encodeError(input).map(formatSseData),
+        formatSseData("[DONE]"),
       ],
     };
   }
@@ -46,6 +47,7 @@ export function createDispatchStreamEncoder(
       finish: () => encoder.finish().map((wire) => formatSseEvent(wire.type, wire)),
       encodeError: ({ origin, code, message, details }) => [
         formatSseEvent("response.error", { type: "response.error", origin, code, message, details }),
+        formatSseEvent("response.done", { type: "response.done", response: { status: "failed" } }),
       ],
     };
   }
@@ -56,6 +58,12 @@ export function createDispatchStreamEncoder(
       finish: () => encoder.finish().map((wire) => formatSseEvent(String(wire.type), wire)),
       encodeError: ({ origin, code, message, details }) => [
         formatSseEvent("error", { type: "error", origin, error: { type: code, message, details } }),
+        formatSseEvent("message_delta", {
+          type: "message_delta",
+          delta: { stop_reason: "error", stop_sequence: null },
+          usage: { output_tokens: 0 },
+        }),
+        formatSseEvent("message_stop", { type: "message_stop" }),
       ],
     };
   }

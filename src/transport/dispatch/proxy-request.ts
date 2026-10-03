@@ -312,51 +312,6 @@ export async function handleProviderProxyRequest(
           created: Date.now() / 1000,
           include_usage: canonicalRequest.generation_controls["extension:include_usage"] === true,
         };
-        // Prime the very first upstream event BEFORE committing the HTTP 200
-        // response (which flushes headers). If candidate 0 cannot even produce
-        // its first event, the error propagates to the outer candidate loop
-        // (which advances to the next candidate) instead of firing inside
-        // `start` after the response was already returned.
-        let iterator = iterable[Symbol.asyncIterator]();
-        let first: IteratorResult<CanonicalEvent>;
-        // Mark the moment we actually pull from the upstream adapter; this is
-        // the zero point for time-to-first-token.
-        state.upstreamDispatchStartedAtMs = Date.now();
-        first = await iterator.next();
-        // Shared streaming state and helpers lifted into the closure so
-        // `start` seeds the primed event and `pull` demand-drives the rest:
-        // the runtime only calls `pull` when the consumer has drained its
-        // queue (desiredSize > 0), giving natural backpressure without the
-        // old 4ms busy-poll loop.
-        let terminal: Extract<CanonicalEvent, { type: "terminal" }> | undefined;
-        let upstreamTruncated = false;
-        let usage: UsageRecord | undefined;
-        let firstByteAt: number | undefined;
-        let firstContentDeltaAtMs: number | undefined;
-        let lastEventAtMs: number | undefined;
-        // Any upstream event (even surface-invisible) proves liveness for
-        // watchdog bound selection.
-        let sawUpstreamActivity = false;
-        // Canonical events streamed to the client; captured as the response
-        // body for telemetry so streaming tool calls/text are traceable.
-        const streamedEvents: CanonicalEvent[] = [];
-        // The actual client-facing response transcript (decoded SSE/JSON) —
-        // distinct from the provider-side canonical events above.
-        let clientResponseText = "";
-        const CLIENT_RESPONSE_CAP = 512 * 1024;
-        // SSE comment frame: valid framing on every streamed surface,
-        // ignored by EventSource clients. Never part of content/telemetry.
-        const KEEPALIVE_COMMENT_BYTES = new TextEncoder().encode(": keepalive\n\n");
-        const CLIENT_SSE_KEEPALIVE_INTERVAL_MS = 15_000;
-        // One decoder per stream: `new TextDecoder()` per chunk would allocate
-        // on every upstream event for the telemetry transcript copy.
-        const clientResponseDecoder = new TextDecoder();
-        const appendClientResponse = (bytes: Uint8Array): void => {
-          if (clientResponseText.length >= CLIENT_RESPONSE_CAP) return;
-          clientResponseText += clientResponseDecoder.decode(bytes, { stream: true });
-          if (clientResponseText.length > CLIENT_RESPONSE_CAP)
-            clientResponseText = clientResponseText.slice(0, CLIENT_RESPONSE_CAP);
-        };
         const streamRouteCandidate = candidate;
         const streamPrepared = prepared;
         const streamEncoder = createDispatchStreamEncoder(
@@ -387,6 +342,98 @@ export async function handleProviderProxyRequest(
             return event.content.kind !== "extension";
           }
           return event.type === "terminal" && event.state === "complete";
+        };
+
+        // Prime upstream events BEFORE committing the HTTP 200 response (which
+        // flushes headers). We pull until we see at least one client-visible
+        // event (content delta, tool call, or complete terminal) or until the
+        // stream produces a failure/EOF. If candidate 0 cannot produce client-visible
+        // content or immediately errors/ends empty, we throw a GatewayError so the
+        // outer attempt loop can cleanly fail over to the next candidate without
+        // having sent a premature 200 OK text/event-stream with zero chunks.
+        let iterator = iterable[Symbol.asyncIterator]();
+        const primedEvents: CanonicalEvent[] = [];
+        let iteratorDone = false;
+        state.upstreamDispatchStartedAtMs = Date.now();
+
+        while (!iteratorDone) {
+          const next = await iterator.next();
+          if (next.done) {
+            iteratorDone = true;
+            break;
+          }
+          const event = next.value;
+          primedEvents.push(event);
+
+          if (event.type === "error") {
+            throw new GatewayError(
+              "transport_unavailable",
+              502,
+              event.message || "upstream stream error before first chunk",
+              { category: event.category },
+              "upstream",
+            );
+          }
+          if (event.type === "terminal" && event.state === "failed") {
+            const terminalErr = terminalFailure(event);
+            if (terminalErr) throw terminalErr;
+            throw new GatewayError(
+              "transport_unavailable",
+              502,
+              "upstream stream failed before first chunk",
+              {},
+              "upstream",
+            );
+          }
+
+          if (isClientVisibleEvent(event)) {
+            break;
+          }
+        }
+
+        if (primedEvents.length === 0 || !primedEvents.some(isClientVisibleEvent)) {
+          throw new GatewayError(
+            "transport_unavailable",
+            502,
+            "upstream stream ended before producing any content",
+            {},
+            "upstream",
+          );
+        }
+
+        // Shared streaming state and helpers lifted into the closure so
+        // `start` seeds the primed events and `pull` demand-drives the rest:
+        // the runtime only calls `pull` when the consumer has drained its
+        // queue (desiredSize > 0), giving natural backpressure without the
+        // old 4ms busy-poll loop.
+        let terminal: Extract<CanonicalEvent, { type: "terminal" }> | undefined;
+        let upstreamTruncated = false;
+        let usage: UsageRecord | undefined;
+        let firstByteAt: number | undefined;
+        let firstContentDeltaAtMs: number | undefined;
+        let lastEventAtMs: number | undefined;
+        // Any upstream event (even surface-invisible) proves liveness for
+        // watchdog bound selection.
+        let sawUpstreamActivity = primedEvents.length > 0;
+        // Canonical events streamed to the client; captured as the response
+        // body for telemetry so streaming tool calls/text are traceable.
+        const streamedEvents: CanonicalEvent[] = [];
+        // The actual client-facing response transcript (decoded SSE/JSON) —
+        // distinct from the provider-side canonical events above.
+        let clientResponseText = "";
+        const CLIENT_RESPONSE_CAP = 512 * 1024;
+        // SSE comment frame: valid framing on every streamed surface,
+        // ignored by EventSource clients. Never part of content/telemetry.
+        const KEEPALIVE_COMMENT_BYTES = new TextEncoder().encode(": keepalive\n\n");
+        const CLIENT_SSE_KEEPALIVE_INTERVAL_MS = 15_000;
+        // One decoder per stream: `new TextDecoder()` per chunk would allocate
+        // on every upstream event for the telemetry transcript copy.
+        const clientResponseDecoder = new TextDecoder();
+        const appendClientResponse = (bytes: Uint8Array): void => {
+          if (clientResponseText.length >= CLIENT_RESPONSE_CAP) return;
+          clientResponseText += clientResponseDecoder.decode(bytes, { stream: true });
+          if (clientResponseText.length > CLIENT_RESPONSE_CAP)
+            clientResponseText = clientResponseText.slice(0, CLIENT_RESPONSE_CAP);
         };
         const pushEncodedEvent = (
           event: CanonicalEvent & { timestamp: number },
@@ -619,7 +666,12 @@ export async function handleProviderProxyRequest(
               if (controller.desiredSize !== null && controller.desiredSize > 0)
                 controller.enqueue(KEEPALIVE_COMMENT_BYTES);
             }, CLIENT_SSE_KEEPALIVE_INTERVAL_MS);
-            if (!first.done) enqueueEvent(first.value, controller);
+            for (const event of primedEvents) {
+              enqueueEvent(event, controller);
+            }
+            if (iteratorDone) {
+              void finalizeStream(controller);
+            }
           },
           async pull(controller) {
             pullActive = true;

@@ -139,6 +139,32 @@ export class CompletionStreamEncoder extends SurfaceStreamEncoder<CanonicalEvent
     return [];
   }
 
+  encodeError(input: {
+    readonly origin: string;
+    readonly code: string;
+    readonly message: string;
+    readonly details: unknown;
+  }): Record<string, unknown>[] {
+    const errorDetails =
+      input.details && typeof input.details === "object" ? { details: input.details } : {};
+    const errorPayload = {
+      error: {
+        origin: input.origin,
+        code: input.code,
+        message: input.message,
+        type: input.code,
+        ...errorDetails,
+      },
+      error_type: input.code,
+      error_message: input.message,
+    };
+    const errorChunk = {
+      ...this.chunk("", "error"),
+      ...errorPayload,
+    };
+    return [errorPayload, errorChunk];
+  }
+
   private chunk(text: string, finish_reason: string | null, responseUsage?: OpenAiUsage): Record<string, unknown> {
     return {
       id: this.id,
