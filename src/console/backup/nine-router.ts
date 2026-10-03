@@ -22,6 +22,7 @@
 import type { BackupPayload, BackupRow } from "./contracts";
 import { BACKUP_APP, BACKUP_VERSION } from "./contracts";
 import { encryptCredential, hashSecret } from "../../security/crypto";
+import { deriveOAuthMachineId } from "../../providers/integrations/kiro/kiro-machine-id";
 
 /** What happened to the file, in terms an operator can act on. */
 export interface ImportReport {
@@ -71,12 +72,13 @@ const PROVIDER_MAP: Readonly<Record<string, string>> = {
   xai: "grok",
   "grok-cli": "grok",
   "gemini-cli": "gemini",
+  // Both routers use Kiro's native OAuth/access-token generation surface.
+  kiro: "kiro",
 };
 
 /** Provider ids the router has that we have no counterpart for, with the reason. */
 const UNSUPPORTED_PROVIDERS: Readonly<Record<string, string>> = {
   iflow: "no matching provider",
-  kiro: "no matching provider",
   github: "no matching provider",
   gitlab: "no matching provider",
   kilocode: "no matching provider",
@@ -117,7 +119,45 @@ function credentialOf(entry: Row): string | null {
 }
 
 /** OAuth-backed providers store a refresh token rather than a static key. */
-const OAUTH_PROVIDERS = new Set(["claude", "codex", "antigravity", "qoder", "kimi", "cline", "clinepass"]);
+const OAUTH_PROVIDERS = new Set(["claude", "codex", "antigravity", "qoder", "kimi", "cline", "clinepass", "kiro"]);
+
+/** AWS region shape accepted by Kiro before it becomes part of an endpoint URL. */
+const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
+
+/**
+ * Carries only Kiro's non-secret dispatch configuration from a router export.
+ *
+ * A Kiro bearer token alone is insufficient: the generation endpoint also needs
+ * the account's profile ARN and a stable device identity. The backup contains
+ * the former under `providerSpecificData`; the latter is deterministically
+ * derived from the refresh token once and persisted, exactly as Kiro's OAuth
+ * import flow does. Unknown auth methods are normalized to `imported`, the one
+ * refresh path that accepts an existing social-session token.
+ */
+function kiroAuthState(entry: Row, refreshToken: string): Record<string, string> {
+  const raw = typeof entry.providerSpecificData === "object" && entry.providerSpecificData !== null
+    ? entry.providerSpecificData as Row
+    : {};
+  const rawMethod = text(raw.authMethod);
+  const authMethod = new Set(["builder-id", "idc", "google", "github", "imported", "external_idp", "api_key"])
+    .has(rawMethod ?? "")
+    ? rawMethod!
+    : "imported";
+  const profileArn = text(raw.profileArn);
+  const regionFromArn = profileArn?.match(/^arn:aws:codewhisperer:([^:]+):/)?.[1];
+  const suppliedRegion = text(raw.region);
+  const region = suppliedRegion !== null && AWS_REGION_PATTERN.test(suppliedRegion)
+    ? suppliedRegion
+    : regionFromArn !== undefined && AWS_REGION_PATTERN.test(regionFromArn)
+      ? regionFromArn
+      : "us-east-1";
+  return {
+    authMethod,
+    region,
+    ...(profileArn === null ? {} : { profileArn }),
+    machineId: deriveOAuthMachineId(refreshToken),
+  };
+}
 
 /** Converts one model reference, honouring the provider map. `null` = unsupported. */
 function modelReference(value: unknown, remapped: Set<string>): string | null {
@@ -158,6 +198,7 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
 
   // ── Provider connections → provider accounts ─────────────────────────────
   const accounts: BackupRow[] = [];
+  const oauthStates: BackupRow[] = [];
   const connectedProviders = new Set<string>();
   rows(source.providerConnections).forEach((entry, index) => {
     const rawProvider = text(entry.provider);
@@ -182,8 +223,15 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       return;
     }
     connectedProviders.add(provider);
+    const accountId = crypto.randomUUID();
+    const isKiro = provider === "kiro";
+    const refreshToken = isKiro ? text(entry.refreshToken) : null;
+    if (isKiro && refreshToken === null) {
+      skipped.push(`${label}: Kiro OAuth account has no refresh token`);
+      return;
+    }
     accounts.push({
-      id: crypto.randomUUID(),
+      id: accountId,
       provider_id: provider,
       tenant_id: tenantId,
       label,
@@ -192,12 +240,21 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       credential_ciphertext: {
         __bytes: encryptCredential(credential).toString("base64"),
       },
+      ...(isKiro ? { credential_fingerprint: hashSecret(credential) } : {}),
       credential_kind: OAUTH_PROVIDERS.has(provider) ? "oauth" : "api_key",
+      ...(isKiro && refreshToken !== null ? { auth_state: kiroAuthState(entry, refreshToken) } : {}),
       status: bool(entry.isActive, true) ? "active" : "disabled",
       consecutive_failures: 0,
       model_cooldowns: {},
       created_at: { __date: isoDate(entry.createdAt, now) },
     });
+    if (isKiro && refreshToken !== null) {
+      oauthStates.push({
+        provider_account_id: accountId,
+        refresh_ciphertext: { __bytes: encryptCredential(refreshToken).toString("base64") },
+        expires_at: { __date: isoDate(entry.expiresAt, now) },
+      });
+    }
   });
 
   // ── Provider nodes → BYOK providers ──────────────────────────────────────
@@ -363,6 +420,7 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
         ...(providers.length > 0 ? { providers } : {}),
         ...(models.length > 0 ? { models } : {}),
         ...(accounts.length > 0 ? { provider_accounts: accounts } : {}),
+        ...(oauthStates.length > 0 ? { provider_oauth_states: oauthStates } : {}),
         ...(apiKeys.length > 0 ? { api_keys: apiKeys } : {}),
         ...(aliases.length > 0 ? { model_aliases: aliases } : {}),
         ...(combos.length > 0 ? { model_combos: combos } : {}),
