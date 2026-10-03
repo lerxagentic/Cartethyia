@@ -1,7 +1,7 @@
 import type { ConsoleAccessResolver } from "../auth/access";
 import type { AuditRecorder } from "../auth/service";
 import { markClineApiKeyCredential } from "../../providers/integrations/cline/cline-quota";
-import { createCreditFloorResolver, type QuotaRefreshDeps } from "./refresh";
+import { createCreditFloorResolver, type QuotaRefreshDeps, type QuotaRefreshTarget } from "./refresh";
 
 /**
  * Dependencies shared by the tenant-scoped and global-admin account/quota route
@@ -17,6 +17,25 @@ export interface AccountQuotaRoutesDeps extends QuotaRefreshDeps {
 
 export const ACCOUNT_STATUSES = ["active", "cooldown", "disabled"] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
+
+/** Converts a route account row into a refresh target without losing OAuth state. */
+export function quotaTargetForAccount(
+  account: {
+    readonly id: string;
+    readonly providerId: string;
+    readonly tenantId: string | null;
+    readonly credentialKind: Exclude<QuotaRefreshTarget["credentialKind"], undefined>;
+    readonly authState: QuotaRefreshTarget["authState"] | null;
+  },
+): QuotaRefreshTarget {
+  return {
+    accountId: account.id,
+    providerId: account.providerId,
+    tenantId: account.tenantId,
+    credentialKind: account.credentialKind,
+    ...(account.authState === null ? {} : { authState: account.authState }),
+  };
+}
 
 /**
  * Builds the refresh dependency bundle from the route deps, binding the

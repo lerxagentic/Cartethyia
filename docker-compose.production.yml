@@ -1,0 +1,64 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cartethyia:local
+    ports:
+      - "127.0.0.1:12800:12800"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "12800"
+      DASHBOARD_DIST: /app/dist/dashboard
+      REDIS_MODE: normal
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    networks:
+      - cartethyia
+
+  redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cartethyia
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cartethyia
+      POSTGRES_USER: cartethyia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgresdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cartethyia -d cartethyia"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - cartethyia
+
+volumes:
+  redisdata:
+  postgresdata:
+
+networks:
+  cartethyia:
+    driver: bridge

@@ -45,6 +45,7 @@ import {
 } from "./quota-view";
 import {
   ACCOUNT_STATUSES,
+  quotaTargetForAccount,
   type AccountQuotaRoutesDeps,
   type AccountStatus,
 } from "./account-quota-shared";
@@ -140,6 +141,7 @@ export function registerAccountQuotaTenantRoutes(
           tenantId: providerAccounts.tenantId,
           label: providerAccounts.label,
           credentialKind: providerAccounts.credentialKind,
+          authState: providerAccounts.authState,
           status: providerAccounts.status,
           lastError: providerAccounts.lastError,
           lastErrorCategory: providerAccounts.lastErrorCategory,
@@ -208,12 +210,7 @@ export function registerAccountQuotaTenantRoutes(
         const canRefresh = providerRegistry.hasQuotaCollector(row.providerId);
         const wantsRefresh = canRefresh && ageMs >= QUOTA_STALE_AFTER_MS;
         if (wantsRefresh) {
-          enqueueBackgroundQuotaRefresh(refreshDeps, {
-            accountId: row.id,
-            providerId: row.providerId,
-            tenantId: row.tenantId,
-            credentialKind: row.credentialKind,
-          });
+          enqueueBackgroundQuotaRefresh(refreshDeps, quotaTargetForAccount(row));
         }
         const isRefreshing = canRefresh && (pending.has(row.id) || entry === undefined);
         if (isRefreshing) refreshing += 1;
@@ -285,7 +282,7 @@ export function registerAccountQuotaTenantRoutes(
       // page open never issues two requests for the same account.
       const outcome = await refreshAccountQuota(
         refreshDeps,
-        { accountId, providerId: account.providerId, tenantId: account.tenantId, credentialKind: account.credentialKind },
+        quotaTargetForAccount(account),
         signalFetch(timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
       );
       const fresh = await getCachedQuotaEntry(access.tenantId, accountId, redis);
@@ -323,7 +320,7 @@ export function registerAccountQuotaTenantRoutes(
       const attemptedAt = new Date().toISOString();
       const outcome = await refreshAccountQuota(
         refreshDeps,
-        { accountId, providerId: account.providerId, tenantId: account.tenantId, credentialKind: account.credentialKind },
+        quotaTargetForAccount(account),
         signalFetch(timeoutSignal(request.signal, QUOTA_REFRESH_TIMEOUT_MS)),
       );
       const httpStatus = outcome.quota.error === null ? 200 : 502;
@@ -368,10 +365,11 @@ export function registerAccountQuotaTenantRoutes(
         }
         const accounts = await db
           .select({
-            accountId: providerAccounts.id,
+            id: providerAccounts.id,
             providerId: providerAccounts.providerId,
             tenantId: providerAccounts.tenantId,
             credentialKind: providerAccounts.credentialKind,
+            authState: providerAccounts.authState,
           })
           .from(providerAccounts)
           .where(
@@ -398,10 +396,11 @@ export function registerAccountQuotaTenantRoutes(
             async () => {
               while (cursor < refreshable.length) {
                 const target = refreshable[cursor++]!;
-                const outcome = await refreshAccountQuota(refreshDeps, target, timedFetch);
+                const quotaTarget = quotaTargetForAccount(target);
+                const outcome = await refreshAccountQuota(refreshDeps, quotaTarget, timedFetch);
                 if (outcome.failure !== null) {
                   failures.push({
-                    accountId: target.accountId,
+                    accountId: quotaTarget.accountId,
                     code: outcome.failure,
                     message: outcome.quota.error ?? "Failed to refresh quota",
                   });
@@ -419,7 +418,7 @@ export function registerAccountQuotaTenantRoutes(
           succeeded,
           failed: failures.length,
           failures,
-          accountIds: accounts.map((a) => a.accountId),
+          accountIds: accounts.map((a) => a.id),
         };
       },
     )
