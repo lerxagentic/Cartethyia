@@ -16,8 +16,6 @@ import { Badge } from "../../components/ui/badge";
 import { Inline } from "../../components/ui/inline";
 import { useConsoleLogStream } from "../../hooks/logs";
 
-// Active beam linger duration (ms)
-const ACTIVE_LINGER_MS = 10000;
 /** A dispatch event without a terminal event must never leave a beam lit
  * forever. This also protects against an SSE reconnect snapshot where the
  * old `request_dispatch` row remains but its terminal row has rolled out of
@@ -521,7 +519,6 @@ export interface ProviderTopologyProps {
 }
 
 export default function ProviderTopology({
-  recentRequests = [],
 }: ProviderTopologyProps): ReactNode {
   // Connect to live console logs stream for 100% REALTIME detection!
   const { lines, status: streamStatus } = useConsoleLogStream();
@@ -557,107 +554,77 @@ export default function ProviderTopology({
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const rfInstanceRef = useRef<ReactFlowInstance | null>(null);
 
-  // Realtime hook: consume the live SSE log stream and track each request's
-  // full lifecycle. A beam turns ON the moment `request_dispatch` arrives
-  // (provider already resolved, upstream call just starting) and OFF when the
-  // same requestId reports `request_complete`/`request_error`. This is what
-  // makes the graph light up at request start instead of only at completion.
+  // Realtime request lifecycle. On refresh/reconnect `lines` contains a whole
+  // log snapshot, not just new events. Resolve terminal events in that batch
+  // FIRST, then retain only dispatches that have no terminal counterpart. This
+  // prevents completed historical requests from replaying their animation every
+  // time the page refreshes.
   useEffect(() => {
     if (lines.length === 0) return;
 
-    let changed = false;
-    const next = new Map(activeMap);
+    const unseen = lines.filter((line) => {
+      const key = `${line.event ?? "line"}|${line.requestId ?? line.id}`;
+      if (processedIdsRef.current.has(key)) return false;
+      processedIdsRef.current.add(key);
+      return true;
+    });
+    if (processedIdsRef.current.size > 4000) {
+      processedIdsRef.current = new Set([...processedIdsRef.current].slice(-2000));
+    }
+    if (unseen.length === 0) return;
 
-    for (const line of lines) {
-      // Dedupe on the event+requestId (not the ephemeral line id): a stream
-      // reconnect re-tags the whole snapshot, and re-playing a `request_dispatch`
-      // for a request that already finished would re-light a dead beam.
-      const dedupeKey = `${line.event ?? "line"}|${line.requestId ?? line.id}`;
-      if (processedIdsRef.current.has(dedupeKey)) continue;
-      processedIdsRef.current.add(dedupeKey);
-      // Bound the memo so a long-lived page cannot leak one key per log line.
-      if (processedIdsRef.current.size > 4000) {
-        processedIdsRef.current = new Set([...processedIdsRef.current].slice(-2000));
-      }
+    const terminalIds = new Set(
+      unseen
+        .filter((line) => (line.event === "request_complete" || line.event === "request_error") && line.requestId)
+        .map((line) => line.requestId as string),
+    );
 
+    for (const line of unseen) {
+      const requestId = line.requestId ?? line.id;
       const pid = line.providerId?.toLowerCase();
       const model = line.model || line.routedModel || "";
 
       if (line.event === "request_dispatch" && pid) {
-        // A freshly connected SSE stream starts with a bounded historical log
-        // snapshot. Only dispatches that are still plausibly in-flight may
-        // activate the canvas; an old record otherwise has no matching terminal
-        // event once that event has dropped out of the ring buffer.
         const occurredAt = Date.parse(line.ts);
         const dispatchedAt = Number.isFinite(occurredAt) ? occurredAt : Date.now();
-        if (Date.now() - dispatchedAt > MAX_LIVE_REQUEST_MS) continue;
-        // Request just started against this provider → light the beam now.
-        liveRequestsRef.current.set(line.requestId ?? line.id, { providerId: pid, model, dispatchedAt });
-        lastSeenRef.current.set(pid, { model, timestamp: Date.now() });
-        next.set(pid, { model, active: true });
-        changed = true;
-      } else if (
-        (line.event === "request_complete" || line.event === "request_error") &&
-        line.requestId
-      ) {
-        // Request finished → drop its live entry. The provider only goes dark
-        // once NO other in-flight request is still bound to it.
+        // Skip completed entries from the same replayed snapshot and stale
+        // entries whose terminal row has already rolled out of the log ring.
+        if (terminalIds.has(requestId) || Date.now() - dispatchedAt > MAX_LIVE_REQUEST_MS) continue;
+        liveRequestsRef.current.set(requestId, { providerId: pid, model, dispatchedAt });
+      } else if ((line.event === "request_complete" || line.event === "request_error") && line.requestId) {
         liveRequestsRef.current.delete(line.requestId);
-        const stillLive = [...liveRequestsRef.current.values()].some(
-          (r) => r.providerId === pid,
-        );
-        if (!stillLive && pid) {
-          lastSeenRef.current.set(pid, { model, timestamp: Date.now() });
-        }
       }
     }
 
-    if (changed) setActiveMap(next);
-  }, [lines, activeMap]);
-
-  // Secondary source: recent requests from Usage API
-  useEffect(() => {
-    const now = Date.now();
-    for (const req of recentRequests) {
-      if (!req.providerId) continue;
-      const pid = req.providerId.toLowerCase();
-      const existing = lastSeenRef.current.get(pid);
-      const reqTime = req.startedAt ? new Date(req.startedAt).getTime() : now;
-      if (now - reqTime < ACTIVE_LINGER_MS) {
-        if (!existing || reqTime > existing.timestamp) {
-          lastSeenRef.current.set(pid, { model: req.model || "", timestamp: reqTime });
-        }
-      }
+    // Derive the visual state only from genuinely live request ids. A completed
+    // request turns off immediately, while concurrent calls to the same provider
+    // remain lit until the final one terminates.
+    const next = new Map<string, { model?: string; active: boolean }>();
+    for (const request of liveRequestsRef.current.values()) {
+      next.set(request.providerId, { model: request.model, active: true });
     }
-  }, [recentRequests]);
+    setActiveMap(next);
+  }, [lines]);
 
-  // Decay timer: return active beams back to idle after ACTIVE_LINGER_MS.
-  // A provider that still has a live (dispatched but not yet completed)
-  // request stays lit for the whole request, however long it runs — the
-  // linger only applies once the request is gone from `liveRequestsRef`.
+  // Safety backstop: a missing terminal frame must not keep a provider lit
+  // forever. Normal request completion is handled immediately by the SSE
+  // lifecycle effect above; this only handles disconnect/restart edge cases.
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      const nextMap = new Map<string, { model?: string; active: boolean }>();
-      // Expire orphaned lifecycle entries. A request normally removes itself
-      // through a terminal SSE event; this is only the safe backstop for a
-      // disconnect/restart or a terminal log that has fallen out of the ring.
+      let expired = false;
       for (const [requestId, request] of liveRequestsRef.current.entries()) {
         if (now - request.dispatchedAt >= MAX_LIVE_REQUEST_MS) {
           liveRequestsRef.current.delete(requestId);
+          expired = true;
         }
       }
-      const liveProviders = new Set(
-        [...liveRequestsRef.current.values()].map((r) => r.providerId),
-      );
-      for (const [pid, data] of lastSeenRef.current.entries()) {
-        if (liveProviders.has(pid) || now - data.timestamp < ACTIVE_LINGER_MS) {
-          nextMap.set(pid, { model: data.model, active: true });
-        } else {
-          lastSeenRef.current.delete(pid);
-        }
+      if (!expired) return;
+      const next = new Map<string, { model?: string; active: boolean }>();
+      for (const request of liveRequestsRef.current.values()) {
+        next.set(request.providerId, { model: request.model, active: true });
       }
-      setActiveMap(nextMap);
+      setActiveMap(next);
     }, 1000);
     return () => clearInterval(interval);
   }, []);
