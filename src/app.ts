@@ -33,6 +33,7 @@ import {
 import { createResponsesCompactHandler } from "./transport/dispatch/responses-compact";
 import { createSystemoneHandler } from "./transport/dispatch/systemone";
 import { createWebsearchHandler } from "./transport/dispatch/websearch";
+import { createImagesHandler } from "./transport/dispatch/images";
 
 import { createTransportPipeline } from "./transport/middleware/pipeline";
 import { createDrainHandler } from "./transport/drain-endpoint";
@@ -474,6 +475,13 @@ export function createGatewayApp(deps: GatewayAppDeps) {
       telemetryBuffer: deps.telemetryBuffer,
     });
 
+    const handleImagesGenerations = createImagesHandler({
+      db: deps.db,
+      stateStore: requestStateStore,
+      resolveOAuthRefresher: deps.resolveOAuthRefresher,
+      oauthRefreshService: deps.oauthRefreshService,
+    });
+
     // Gateway mounting: the pipeline owner composes stages, telemetry, and
     // cleanup; app only registers the public route table.
     app.use(
@@ -485,6 +493,7 @@ export function createGatewayApp(deps: GatewayAppDeps) {
         routes.post("/completions", proxyHandler);
         routes.post("/systemone", handleSystemone);
         routes.post("/search", handleWebsearch);
+        routes.post("/images/generations", handleImagesGenerations);
         routes.get("/models", handleModelsList);
         routes.get("/models/info", handleModelsDetail);
         routes.get("/models/*", handleModelsDetail);

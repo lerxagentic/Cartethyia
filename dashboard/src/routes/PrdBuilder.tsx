@@ -61,7 +61,8 @@ export function buildPrdPrompt(prompt: string): string {
     "## 8. Risks, Assumptions & Open Questions",
     "What could block implementation, key dependencies, and decisions that still need validation.",
     "",
-    "Rules:",
+    "- Complete ALL 8 sections thoroughly without stopping early or truncating tables.",
+    "- Rules:",
     "- Write section titles and body in the same language as the user's request (e.g. Indonesian if the prompt is in Indonesian, English if English).",
     "- No conversational filler, pleasantries, or closing summary. Start immediately with Section 1.",
     "- Where details are unspecified, do not fabricate them; place them under Section 8 as Open Questions.",
@@ -112,6 +113,7 @@ export default function PrdBuilder(): ReactNode {
   const [generating, setGenerating] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"preview" | "edit">("preview");
+  const [wasTruncated, setWasTruncated] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const { copied, copy } = useClipboard();
 
@@ -135,6 +137,7 @@ export default function PrdBuilder(): ReactNode {
     setGenerating(true);
     setViewMode("preview");
     setDocument("");
+    setWasTruncated(false);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -152,7 +155,7 @@ export default function PrdBuilder(): ReactNode {
           messages: [{ role: "user", content: buildPrdPrompt(prompt) }],
           stream: true,
           temperature: 0.7,
-          max_tokens: 4096,
+          max_tokens: 16384,
         }),
         signal: controller.signal,
       });
@@ -164,10 +167,16 @@ export default function PrdBuilder(): ReactNode {
         {
           onUpdate: (latest) => {
             setDocument(latest.text);
+            if (latest.finishReason === "length") {
+              setWasTruncated(true);
+            }
           },
         },
         controller.signal,
       );
+      if (acc.finishReason === "length") {
+        setWasTruncated(true);
+      }
     } catch (err: unknown) {
       if ((err as Error)?.name === "AbortError") {
         toast.success("PRD generation stopped.");
@@ -179,6 +188,70 @@ export default function PrdBuilder(): ReactNode {
       setGenerating(false);
     }
   }, [model, prompt]);
+
+  const handleContinue = useCallback(async () => {
+    if (!document.trim()) return;
+    setGenerating(true);
+    setWasTruncated(false);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const baseDoc = document;
+
+    try {
+      const key = await ensureGatewayKey();
+      const res = await fetch("/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "user", content: buildPrdPrompt(prompt) },
+            { role: "assistant", content: baseDoc },
+            {
+              role: "user",
+              content:
+                "Please continue writing the remaining sections of this PRD document from where it stopped. Do not repeat the sections already written above; start immediately with the next unfinished section or row.",
+            },
+          ],
+          stream: true,
+          temperature: 0.7,
+          max_tokens: 16384,
+        }),
+        signal: controller.signal,
+      });
+
+      const acc = createChatStreamAccumulator();
+      await pumpChatStream(
+        res,
+        acc,
+        {
+          onUpdate: (latest) => {
+            setDocument(baseDoc + (latest.text ? "\n\n" + latest.text : ""));
+            if (latest.finishReason === "length") {
+              setWasTruncated(true);
+            }
+          },
+        },
+        controller.signal,
+      );
+      if (acc.finishReason === "length") {
+        setWasTruncated(true);
+      }
+    } catch (err: unknown) {
+      if ((err as Error)?.name === "AbortError") {
+        toast.success("PRD continuation stopped.");
+      } else {
+        toast.error(getErrorMessage(err, "Failed to continue PRD generation."));
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setGenerating(false);
+    }
+  }, [model, prompt, document]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -328,6 +401,16 @@ export default function PrdBuilder(): ReactNode {
                     <Play size={14} /> Generate PRD
                   </Button>
                 )}
+                {wasTruncated ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleContinue}
+                    disabled={generating}
+                  >
+                    <Play size={14} /> Continue Generating
+                  </Button>
+                ) : null}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -406,7 +489,7 @@ export default function PrdBuilder(): ReactNode {
         <Card>
           <CardHeader
             title="Generated Specification"
-            subtitle={`${document.split(/\s+/).filter(Boolean).length} words · ${document.length} characters`}
+            subtitle={`${document.split(/\s+/).filter(Boolean).length} words · ${document.length} characters${wasTruncated ? " · ⚠️ Token limit reached (click 'Continue Generating' to resume)" : ""}`}
             icon={<FileText size={16} />}
           />
           <CardBody>
