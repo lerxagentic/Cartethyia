@@ -65,7 +65,7 @@ Want to run Cartethyia locally? See the [Getting started guide](documentation/ge
 for requirements, PostgreSQL setup, local in-memory Redis mode, Docker, commands,
 and verification steps.
 
-For contribution rules and repository workflow, see `CONTRIBUTING.md`.
+For contribution rules and repository workflow, see `CONTRIBUTING.md`. For Caddy/Nginx-style reverse-proxy rules that preserve realtime Console SSE updates, see the [reverse-proxy guide](documentation/reverse-proxy.md).
 
 ## License
 
