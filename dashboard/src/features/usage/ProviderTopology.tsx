@@ -18,6 +18,11 @@ import { useConsoleLogStream } from "../../hooks/logs";
 
 // Active beam linger duration (ms)
 const ACTIVE_LINGER_MS = 10000;
+/** A dispatch event without a terminal event must never leave a beam lit
+ * forever. This also protects against an SSE reconnect snapshot where the
+ * old `request_dispatch` row remains but its terminal row has rolled out of
+ * the bounded server-side log ring. */
+const MAX_LIVE_REQUEST_MS = 90_000;
 
 export interface TopologyProviderMeta {
   readonly id: string;
@@ -542,7 +547,9 @@ export default function ProviderTopology({
    *  Populated on `request_dispatch` (provider known) and cleared on
    *  `request_complete`/`request_error`, so a beam is lit for exactly the
    *  duration of the request rather than only after it finishes. */
-  const liveRequestsRef = useRef<Map<string, { providerId: string; model: string }>>(new Map());
+  const liveRequestsRef = useRef<
+    Map<string, { providerId: string; model: string; dispatchedAt: number }>
+  >(new Map());
   const processedIdsRef = useRef<Set<string>>(new Set());
 
   // Track container width for responsive layout
@@ -577,8 +584,15 @@ export default function ProviderTopology({
       const model = line.model || line.routedModel || "";
 
       if (line.event === "request_dispatch" && pid) {
+        // A freshly connected SSE stream starts with a bounded historical log
+        // snapshot. Only dispatches that are still plausibly in-flight may
+        // activate the canvas; an old record otherwise has no matching terminal
+        // event once that event has dropped out of the ring buffer.
+        const occurredAt = Date.parse(line.ts);
+        const dispatchedAt = Number.isFinite(occurredAt) ? occurredAt : Date.now();
+        if (Date.now() - dispatchedAt > MAX_LIVE_REQUEST_MS) continue;
         // Request just started against this provider → light the beam now.
-        liveRequestsRef.current.set(line.requestId ?? line.id, { providerId: pid, model });
+        liveRequestsRef.current.set(line.requestId ?? line.id, { providerId: pid, model, dispatchedAt });
         lastSeenRef.current.set(pid, { model, timestamp: Date.now() });
         next.set(pid, { model, active: true });
         changed = true;
@@ -625,6 +639,14 @@ export default function ProviderTopology({
     const interval = setInterval(() => {
       const now = Date.now();
       const nextMap = new Map<string, { model?: string; active: boolean }>();
+      // Expire orphaned lifecycle entries. A request normally removes itself
+      // through a terminal SSE event; this is only the safe backstop for a
+      // disconnect/restart or a terminal log that has fallen out of the ring.
+      for (const [requestId, request] of liveRequestsRef.current.entries()) {
+        if (now - request.dispatchedAt >= MAX_LIVE_REQUEST_MS) {
+          liveRequestsRef.current.delete(requestId);
+        }
+      }
       const liveProviders = new Set(
         [...liveRequestsRef.current.values()].map((r) => r.providerId),
       );
