@@ -36,8 +36,9 @@ export interface GeneratedImageItem {
 }
 
 const DEFAULT_IMAGE_MODELS = [
+  { id: "pollinations/flux", label: "Flux (Free & Unlimited)" },
   { id: "antigravity/gemini-3.1-flash-image", label: "Gemini 3.1 Flash Image" },
-  { id: "antigravity/imagen-3.0-generate-002", label: "Imagen 3 (Google)" },
+  { id: "pollinations/turbo", label: "SDXL Turbo (Ultra Fast)" },
   { id: "dahl/dall-e-3", label: "DALL-E 3 (OpenAI)" },
 ];
 
@@ -59,9 +60,9 @@ const EXAMPLE_PROMPTS = [
 export default function ImageLab(): ReactNode {
   const [model, setModel] = useState<string>(() => {
     try {
-      return localStorage.getItem(STORAGE_MODEL_KEY) || "antigravity/gemini-3.1-flash-image";
+      return localStorage.getItem(STORAGE_MODEL_KEY) || "pollinations/flux";
     } catch {
-      return "antigravity/gemini-3.1-flash-image";
+      return "pollinations/flux";
     }
   });
 

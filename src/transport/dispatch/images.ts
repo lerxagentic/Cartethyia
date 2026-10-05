@@ -58,6 +58,53 @@ function sizeToAspectRatio(size: string): string {
   }
 }
 
+function sizeToDimensions(size: string): { width: number; height: number } {
+  switch (size) {
+    case "1792x1024":
+    case "16:9":
+      return { width: 1280, height: 720 };
+    case "1024x1792":
+    case "9:16":
+      return { width: 720, height: 1280 };
+    case "1280x960":
+    case "4:3":
+      return { width: 1024, height: 768 };
+    case "960x1280":
+    case "3:4":
+      return { width: 768, height: 1024 };
+    default:
+      return { width: 1024, height: 1024 };
+  }
+}
+
+async function handlePollinationsImage(
+  prompt: string,
+  size: string,
+  model = "flux",
+): Promise<Response> {
+  const { width, height } = sizeToDimensions(size);
+  const cleanModel = model.replace(/^pollinations\//, "").replace(/^flux\//, "") || "flux";
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&model=${encodeURIComponent(cleanModel)}&nologo=true`;
+
+  const upstreamRes = await fetch(url);
+  if (!upstreamRes.ok) {
+    throw new GatewayError("platform_unavailable", 502, `Image generation failed (${upstreamRes.status})`);
+  }
+
+  const buf = await upstreamRes.arrayBuffer();
+  const b64 = Buffer.from(buf).toString("base64");
+
+  return jsonResponse({
+    created: Math.floor(Date.now() / 1000),
+    data: [
+      {
+        b64_json: b64,
+        revised_prompt: prompt,
+      },
+    ],
+  });
+}
+
 export function createImagesHandler(deps: ImagesHandlerDeps) {
   return async ({ request }: { request: Request }): Promise<Response> => {
     const state = deps.stateStore.require(request);
@@ -73,10 +120,20 @@ export function createImagesHandler(deps: ImagesHandlerDeps) {
       throw new GatewayError("invalid_request", 400, "Missing required field: prompt");
     }
 
-    const requestedModel = (typeof body.model === "string" ? body.model.trim() : "") || "antigravity/gemini-3.1-flash-image";
+    const requestedModel = (typeof body.model === "string" ? body.model.trim() : "") || "pollinations/flux";
     const requestedSize = typeof body.size === "string" ? body.size : "1024x1024";
 
-    // 1. Antigravity Image Generation
+    // 1. Pollinations / Flux Image Generation
+    const isPollinations =
+      requestedModel.startsWith("pollinations/") ||
+      requestedModel.startsWith("flux/") ||
+      /flux|pollinations|turbo/i.test(requestedModel);
+
+    if (isPollinations) {
+      return await handlePollinationsImage(prompt, requestedSize, requestedModel);
+    }
+
+    // 2. Antigravity Image Generation
     const isAntigravity =
       requestedModel.startsWith("antigravity/") ||
       /gemini.*image|imagen/i.test(requestedModel);
@@ -85,18 +142,18 @@ export function createImagesHandler(deps: ImagesHandlerDeps) {
       return await handleAntigravityImage(deps, requestedModel, prompt, requestedSize);
     }
 
-    // 2. Dahl / OpenAI Compatible Image Generation
+    // 3. Dahl / OpenAI Compatible Image Generation
     const isDahl =
       requestedModel.startsWith("dahl/") ||
       requestedModel.startsWith("openai/") ||
-      /dall-e|gpt-image|flux/i.test(requestedModel);
+      /dall-e|gpt-image/i.test(requestedModel);
 
     if (isDahl) {
       return await handleDahlImage(deps, requestedModel, prompt, requestedSize, body);
     }
 
-    // Default fallback to Antigravity
-    return await handleAntigravityImage(deps, "antigravity/gemini-3.1-flash-image", prompt, requestedSize);
+    // Default fallback to Pollinations / Flux
+    return await handlePollinationsImage(prompt, requestedSize, "flux");
   };
 }
 
@@ -118,7 +175,6 @@ async function handleAntigravityImage(
 
   const cleanModel = modelStr.replace(/^antigravity\//, "");
   const aspectRatio = sizeToAspectRatio(size);
-  let lastError = "";
 
   for (const account of accounts) {
     if (!account.credentialCiphertext) continue;
@@ -167,7 +223,6 @@ async function handleAntigravityImage(
       });
 
       if (!upstreamRes.ok) {
-        lastError = await upstreamRes.text().catch(() => "");
         continue;
       }
 
@@ -192,12 +247,13 @@ async function handleAntigravityImage(
           data: images,
         });
       }
-    } catch (e: any) {
-      lastError = e?.message || String(e);
+    } catch {
+      // try next account
     }
   }
 
-  throw new GatewayError("platform_unavailable", 502, `All Antigravity accounts failed image generation: ${lastError}`);
+  // If all Antigravity accounts are exhausted/blocked, failover gracefully to Pollinations / Flux
+  return await handlePollinationsImage(prompt, size, "flux");
 }
 
 async function handleDahlImage(
