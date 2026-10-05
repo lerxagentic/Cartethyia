@@ -30,6 +30,7 @@ import { completeAttempt, estimatedUsage, type ProviderExchangeCapture } from ".
 import { repriceUsage } from "../../providers/usage";
 import { shouldCooldownPool, isOAuthCredentialInvalidated } from "./retry-policy";
 import { drainAbortReason } from "../shutdown-notice";
+import { pushStructuredConsoleLog } from "../../observability/log-ring";
 
 /** Route-specific preconditions resolved for one candidate before its leases are taken. */
 interface PreparedAttempt<TAdapter> {
@@ -141,6 +142,32 @@ export async function runAttemptLoop<TResult, TAdapter>(
       // upstream resources; the lease and reservation are held from here on.
       bindingEstablished = true;
       state.startProviderFlight();
+      // Realtime dispatch signal: emitted the instant the provider binding is
+      // secured, BEFORE the upstream call — so live observers (the Usage
+      // provider topology graph, console log) light up at request start rather
+      // than at completion. Mirrors 9Router's `trackPendingRequest(started=true)`
+      // which fires at dispatch time with the provider already resolved.
+      const requestedModel =
+        state.ingressBody !== null &&
+        typeof state.ingressBody === "object" &&
+        !Array.isArray(state.ingressBody)
+          ? (state.ingressBody as Record<string, unknown>)["model"]
+          : undefined;
+      pushStructuredConsoleLog("info", "Proxy request dispatched", {
+        event: "request_dispatch",
+        requestId: state.requestId,
+        ...(state.ingressMethod ? { method: state.ingressMethod } : {}),
+        ...(state.ingressPath ? { endpoint: state.ingressPath } : {}),
+        ...(typeof requestedModel === "string" && requestedModel.length > 0
+          ? { model: requestedModel }
+          : {}),
+        routedModel: candidate.model_id,
+        providerId: candidate.provider_id,
+        ...(candidate.provider_account_id ? { accountId: candidate.provider_account_id } : {}),
+        ...(candidate.provider_account_label ? { accountLabel: candidate.provider_account_label } : {}),
+        ...(networkPoolId ? { networkPoolId } : {}),
+        ...(state.clientIdentity ? { clientIp: state.clientIdentity.address } : {}),
+      });
       return await input.attempt({
         candidate,
         credential,

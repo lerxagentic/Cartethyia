@@ -14,7 +14,12 @@ export interface ConsoleLogLine {
   readonly ts: string;
   readonly level: ConsoleLogLevel;
   readonly msg: string;
-  readonly event?: "request_start" | "request_complete" | "request_error" | "token_refresh";
+  readonly event?:
+    | "request_start"
+    | "request_dispatch"
+    | "request_complete"
+    | "request_error"
+    | "token_refresh";
   readonly requestId?: string;
   readonly endpoint?: string;
   readonly method?: string;

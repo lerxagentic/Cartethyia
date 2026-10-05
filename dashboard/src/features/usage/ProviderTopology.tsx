@@ -538,26 +538,68 @@ export default function ProviderTopology({
   // Active status per provider with linger decay
   const [activeMap, setActiveMap] = useState<Map<string, { model?: string; active: boolean }>>(new Map());
   const lastSeenRef = useRef<Map<string, { model: string; timestamp: number }>>(new Map());
+  /** Live requests keyed by requestId → the provider they are bound to.
+   *  Populated on `request_dispatch` (provider known) and cleared on
+   *  `request_complete`/`request_error`, so a beam is lit for exactly the
+   *  duration of the request rather than only after it finishes. */
+  const liveRequestsRef = useRef<Map<string, { providerId: string; model: string }>>(new Map());
+  const processedIdsRef = useRef<Set<string>>(new Set());
 
   // Track container width for responsive layout
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const rfInstanceRef = useRef<ReactFlowInstance | null>(null);
 
-  // Realtime hook: listen to SSE log stream line additions
+  // Realtime hook: consume the live SSE log stream and track each request's
+  // full lifecycle. A beam turns ON the moment `request_dispatch` arrives
+  // (provider already resolved, upstream call just starting) and OFF when the
+  // same requestId reports `request_complete`/`request_error`. This is what
+  // makes the graph light up at request start instead of only at completion.
   useEffect(() => {
     if (lines.length === 0) return;
-    const latest = lines[lines.length - 1];
-    if (!latest) return;
 
-    // Check if the log line is a proxy request event
-    const pid = latest.providerId?.toLowerCase();
-    if (pid) {
-      const model = latest.model || latest.routedModel || "";
-      lastSeenRef.current.set(pid, { model, timestamp: Date.now() });
-      setActiveMap((prev) => new Map(prev).set(pid, { model, active: true }));
+    let changed = false;
+    const next = new Map(activeMap);
+
+    for (const line of lines) {
+      // Dedupe on the event+requestId (not the ephemeral line id): a stream
+      // reconnect re-tags the whole snapshot, and re-playing a `request_dispatch`
+      // for a request that already finished would re-light a dead beam.
+      const dedupeKey = `${line.event ?? "line"}|${line.requestId ?? line.id}`;
+      if (processedIdsRef.current.has(dedupeKey)) continue;
+      processedIdsRef.current.add(dedupeKey);
+      // Bound the memo so a long-lived page cannot leak one key per log line.
+      if (processedIdsRef.current.size > 4000) {
+        processedIdsRef.current = new Set([...processedIdsRef.current].slice(-2000));
+      }
+
+      const pid = line.providerId?.toLowerCase();
+      const model = line.model || line.routedModel || "";
+
+      if (line.event === "request_dispatch" && pid) {
+        // Request just started against this provider → light the beam now.
+        liveRequestsRef.current.set(line.requestId ?? line.id, { providerId: pid, model });
+        lastSeenRef.current.set(pid, { model, timestamp: Date.now() });
+        next.set(pid, { model, active: true });
+        changed = true;
+      } else if (
+        (line.event === "request_complete" || line.event === "request_error") &&
+        line.requestId
+      ) {
+        // Request finished → drop its live entry. The provider only goes dark
+        // once NO other in-flight request is still bound to it.
+        liveRequestsRef.current.delete(line.requestId);
+        const stillLive = [...liveRequestsRef.current.values()].some(
+          (r) => r.providerId === pid,
+        );
+        if (!stillLive && pid) {
+          lastSeenRef.current.set(pid, { model, timestamp: Date.now() });
+        }
+      }
     }
-  }, [lines]);
+
+    if (changed) setActiveMap(next);
+  }, [lines, activeMap]);
 
   // Secondary source: recent requests from Usage API
   useEffect(() => {
@@ -575,13 +617,19 @@ export default function ProviderTopology({
     }
   }, [recentRequests]);
 
-  // Decay timer: return active beams back to idle after ACTIVE_LINGER_MS
+  // Decay timer: return active beams back to idle after ACTIVE_LINGER_MS.
+  // A provider that still has a live (dispatched but not yet completed)
+  // request stays lit for the whole request, however long it runs — the
+  // linger only applies once the request is gone from `liveRequestsRef`.
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
       const nextMap = new Map<string, { model?: string; active: boolean }>();
+      const liveProviders = new Set(
+        [...liveRequestsRef.current.values()].map((r) => r.providerId),
+      );
       for (const [pid, data] of lastSeenRef.current.entries()) {
-        if (now - data.timestamp < ACTIVE_LINGER_MS) {
+        if (liveProviders.has(pid) || now - data.timestamp < ACTIVE_LINGER_MS) {
           nextMap.set(pid, { model: data.model, active: true });
         } else {
           lastSeenRef.current.delete(pid);
