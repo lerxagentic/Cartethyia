@@ -85,6 +85,42 @@ export function Markdown({ text }: { text: string }): ReactNode {
         ),
         th: ({ children }) => <th style={{ borderBottom: "1px solid var(--border-strong)", textAlign: "left", padding: "4px 8px" }}>{children}</th>,
         td: ({ children }) => <td style={{ borderBottom: "1px solid var(--inner-border)", padding: "4px 8px", verticalAlign: "top" }}>{children}</td>,
+        img: ({ src, alt }) => (
+          <div style={{ marginTop: "10px", marginBottom: "10px" }}>
+            <img
+              src={src}
+              alt={alt || "Generated Image"}
+              style={{
+                maxWidth: "100%",
+                maxHeight: "512px",
+                borderRadius: "10px",
+                border: "1px solid var(--inner-border)",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+                display: "block",
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                if (src) window.open(src, "_blank");
+              }}
+            />
+            {src && src.startsWith("data:image/") ? (
+              <div style={{ marginTop: "6px" }}>
+                <a
+                  href={src}
+                  download="generated-image.png"
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--status-info)",
+                    textDecoration: "none",
+                    fontWeight: 600,
+                  }}
+                >
+                  Download Image (.png)
+                </a>
+              </div>
+            ) : null}
+          </div>
+        ),
       }}
     >
       {text}

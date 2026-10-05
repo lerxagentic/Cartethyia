@@ -9,6 +9,7 @@ import {
   FileAudio,
   FileText,
   Globe,
+  ImageIcon,
   MessageSquareText,
   Paperclip,
   Plus,
@@ -83,6 +84,7 @@ type ThinkLevel = (typeof THINK_LEVELS)[number]["value"];
 
 
 const SUGGESTIONS = [
+  { label: "Generate an image: a glowing cyberpunk floating orb in dark room", icon: ImageIcon },
   { label: "Test tool calling: use printf to print hello", icon: Wrench },
   { label: "Think step by step through a tricky logic puzzle", icon: Brain },
   { label: "Explain how TCP retransmission works, briefly", icon: Globe },
@@ -794,6 +796,53 @@ export default function ModelLab(): ReactNode {
     let finalUsage: ChatStreamAccumulator["usage"];
     let ttfbMs: number | undefined;
     let turns = 0;
+
+    const isImage = /image|imagen|dall-e|flux|midjourney/i.test(model.trim());
+    if (isImage) {
+      setToolStatus(`Generating image with ${model.trim()}…`);
+      const imgRes = await fetch("/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: model.trim(),
+          prompt,
+          size: "1024x1024",
+          response_format: "b64_json",
+        }),
+        signal: controller.signal,
+      });
+
+      if (!imgRes.ok) {
+        const errJson = (await imgRes.json().catch(() => ({}))) as Record<string, any>;
+        throw new Error(errJson?.error?.message || `Image generation failed (${imgRes.status})`);
+      }
+
+      const imgData = (await imgRes.json()) as {
+        data?: Array<{ b64_json?: string; revised_prompt?: string }>;
+      };
+      const firstImage = imgData.data?.[0];
+      const b64 = firstImage?.b64_json;
+      if (!b64) throw new Error("No image data returned from provider");
+
+      finalText = `![${prompt}](data:image/png;base64,${b64})\n\n*Generated image with ${model.trim()}*`;
+      const elapsed = Math.round(performance.now() - startedAt);
+      const assistantMessage: StudioMessage = {
+        role: "assistant",
+        content: finalText,
+        ts: new Date().toISOString(),
+        completionMs: elapsed,
+      };
+      history.push(assistantMessage);
+      setLive(null);
+      liveRef.current = null;
+      setToolStatus(null);
+      await patchSession.mutateAsync({ sessionId: active.id, messages: history });
+      return;
+    }
+
     for (;;) {
       if (stopRef.current || controller.signal.aborted) break;
       if (turns >= MAX_TOOL_TURNS) {
