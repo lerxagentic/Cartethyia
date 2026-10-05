@@ -5,6 +5,7 @@ import {
   Cpu,
   FlaskConical,
   Globe,
+  ImageIcon,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -58,6 +59,7 @@ export const navigationGroups: readonly NavGroupDef[] = [
     items: [
       { label: "Overview", path: "/", icon: LayoutDashboard },
       { label: "Model Lab", path: "/model-lab", icon: FlaskConical },
+      { label: "Image Lab", path: "/image-lab", icon: ImageIcon },
       { label: "Compare Models", path: "/arena", icon: Swords },
       { label: "PRD Builder", path: "/prd-builder", icon: FileText },
       { label: "Usage", path: "/usage", icon: Activity },
@@ -97,7 +99,11 @@ const titlesMap: Record<string, { title: string; sub: string }> = {
     sub: "Network pools, SOCKS5/HTTP egress, and dispatch",
   },
   "/console-log": { title: "Console Log", sub: "Live server logs and audit trail" },
-  "/model-lab": { title: "Model Lab", sub: "Live model playground — chat, thinking, and image generation" },
+  "/model-lab": { title: "Model Lab", sub: "Live model playground — chat, thinking, and tools" },
+  "/image-lab": {
+    title: "Image Lab",
+    sub: "AI Image Studio — generate, preview, and download images",
+  },
   "/arena": {
     title: "Compare Models",
     sub: "Live multi-model battle, streaming speed comparison, and reasoning evaluation",
@@ -639,10 +645,11 @@ function FooterClock() {
   const isHealthy = healthQuery.data?.status === "healthy";
   const isError = healthQuery.isError;
   const uptimeSeconds = healthQuery.data?.uptime_seconds;
-  // Immersive pages (Model Lab, Arena, PRD Builder) hide the ops status pill — a chatbot/workspace
+  // Immersive pages (Model Lab, Image Lab, Arena, PRD Builder) hide the ops status pill — a chatbot/workspace
   // surface should not narrate gateway health at the user.
   const hideStatus =
     location.pathname === "/model-lab" ||
+    location.pathname === "/image-lab" ||
     location.pathname === "/arena" ||
     location.pathname === "/prd-builder";
 
@@ -909,6 +916,7 @@ export function DashboardShell({
 
           {/* Footer Taskbar Clock — hidden on immersive pages */}
           {location.pathname !== "/model-lab" &&
+          location.pathname !== "/image-lab" &&
           location.pathname !== "/arena" &&
           location.pathname !== "/prd-builder" ? (
             <div
