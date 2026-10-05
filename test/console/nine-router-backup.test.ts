@@ -61,3 +61,34 @@ describe("9Router Kiro OAuth backup conversion", () => {
     expect(result.report.skipped).toEqual([]);
   });
 });
+
+describe("9Router full provider import", () => {
+  test("maps codebuddy-intl, gcli, oc; imports dahl BYOK; honours providerAlias custom models", () => {
+    setCredentialEncryptionKeyForTesting(Buffer.alloc(32, 7));
+
+    const result = convert9RouterBackup(
+      {
+        providerConnections: [
+          { provider: "codebuddy-intl", name: "cb account", apiKey: "cb-key", isActive: true },
+          { provider: "dahl", name: "dahl account", apiKey: "dahl_abc", isActive: true },
+          { provider: "grok-cli", name: "grok refresh account", accessToken: "xoxp-token", refreshToken: "grok-refresh", expiresAt: "2027-01-01T00:00:00Z", isActive: true },
+        ],
+        customModels: [{ providerAlias: "cbai", id: "glm-5.3", type: "llm", name: "glm-5.3" }],
+      },
+      TENANT_ID,
+    );
+    const config = configRows(result);
+
+    const providerIds = (config.provider_accounts ?? []).map((r: Record<string, unknown>) => r.provider_id);
+    expect(providerIds).toContain("cb");
+    expect(providerIds).toContain("dahl");
+    expect(providerIds).toContain("grok");
+    // dahl BYOK provider node synthesized
+    expect(config.providers?.[0]).toMatchObject({ id: "dahl", base_url: "https://inference.dahl.global" });
+    // grok oauth state imported
+    expect(config.provider_oauth_states).toHaveLength(1);
+    // customModels honored through providerAlias
+    const customModelIds = (config.models ?? []).map((r: Record<string, unknown>) => r.model_id);
+    expect(customModelIds).toContain("glm-5.3");
+  });
+});

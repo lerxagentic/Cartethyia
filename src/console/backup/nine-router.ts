@@ -66,11 +66,21 @@ const PROVIDER_MAP: Readonly<Record<string, string>> = {
   kimi: "kimi",
   cline: "cline",
   clinepass: "cline",
+  // 9Router's CodeBuddy international id and its `cbai` alias map to our `cb`.
+  "codebuddy-intl": "cb",
+  cbai: "cb",
+  // 9Router's `oc` alias is opencode (source: open-sse registry
+  // `alias: "oc"`), which we file under `opencodeft`; the Dahl Inference
+  // gateway is OpenAI-compatible but has no counterpart in our catalog,
+  // so we store its accounts as `dahl` BYOK provider nodes below.
+  oc: "opencodeft",
   opencode: "opencodeft",
   "opencode-free": "opencodeft",
   "opencode-go": "opencodego",
   xai: "grok",
   "grok-cli": "grok",
+  // 9Router's `gcli` alias (grok-cli registry entry) resolves to grok too.
+  gcli: "grok",
   "gemini-cli": "gemini",
   // Both routers use Kiro's native OAuth/access-token generation surface.
   kiro: "kiro",
@@ -87,7 +97,6 @@ const UNSUPPORTED_PROVIDERS: Readonly<Record<string, string>> = {
   windsurf: "no matching provider",
   zed: "no matching provider",
   "codebuddy-cn": "no matching provider",
-  "codebuddy-intl": "no matching provider",
 };
 
 function rows(value: unknown): Row[] {
@@ -119,7 +128,7 @@ function credentialOf(entry: Row): string | null {
 }
 
 /** OAuth-backed providers store a refresh token rather than a static key. */
-const OAUTH_PROVIDERS = new Set(["claude", "codex", "antigravity", "qoder", "kimi", "cline", "clinepass", "kiro"]);
+const OAUTH_PROVIDERS = new Set(["claude", "codex", "antigravity", "qoder", "kimi", "cline", "clinepass", "kiro", "grok", "xai"]);
 
 /** AWS region shape accepted by Kiro before it becomes part of an endpoint URL. */
 const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
@@ -200,6 +209,12 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
   const accounts: BackupRow[] = [];
   const oauthStates: BackupRow[] = [];
   const connectedProviders = new Set<string>();
+  // Declared here (not beside the provider-node loop below) because Dahl
+  // Inference accounts arrive in `providerConnections` while being BYOK
+  // nodes: their provider row and catalog are synthesized on first sight.
+  const providers: BackupRow[] = [];
+  const models: BackupRow[] = [];
+  const seenProviderIds = new Set<string>();
   rows(source.providerConnections).forEach((entry, index) => {
     const rawProvider = text(entry.provider);
     const label = text(entry.name) ?? `connection ${index + 1}`;
@@ -211,7 +226,45 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       skipped.push(`${label}: provider "${rawProvider}" (${UNSUPPORTED_PROVIDERS[rawProvider]})`);
       return;
     }
-    const provider = PROVIDER_MAP[rawProvider];
+    let provider = PROVIDER_MAP[rawProvider];
+    if (provider === undefined && rawProvider === "dahl") {
+      // Dahl Inference (dahl.global) is an OpenAI-compatible gateway the
+      // router carries as a built-in; we carry no counterpart, so its
+      // accounts become a BYOK provider under the same id. Endpoint and
+      // catalogue mirror the router's own registry entry
+      // (open-sse/providers/registry/dahl.js).
+      provider = "dahl";
+      if (!seenProviderIds.has("dahl")) {
+        seenProviderIds.add("dahl");
+        providers.push({
+          id: "dahl",
+          tenant_id: tenantId,
+          enabled: true,
+          requires_account: true,
+          base_url: "https://inference.dahl.global",
+          wire_family_default: "chat",
+          compatibility_profile: { imported_from_router_registry: true },
+        });
+        for (const modelId of [
+          "zai-org/GLM-5.3-Flash",
+          "deepseek-ai/DeepSeek-V4-Flash-0731",
+          "MiniMaxAI/MiniMax-M2.7",
+        ]) {
+          models.push({
+            id: crypto.randomUUID(),
+            provider_id: "dahl",
+            model_id: modelId,
+            wire_family: "chat",
+            endpoint_path: "/v1/chat/completions",
+            enabled: true,
+            reasoning: false,
+            tool_call: true,
+            web_search: false,
+          });
+        }
+      }
+      remapped.add("dahl → BYOK provider \"dahl\"");
+    }
     if (provider === undefined) {
       skipped.push(`${label}: unknown provider "${rawProvider}"`);
       return;
@@ -224,10 +277,10 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
     }
     connectedProviders.add(provider);
     const accountId = crypto.randomUUID();
-    const isKiro = provider === "kiro";
-    const refreshToken = isKiro ? text(entry.refreshToken) : null;
-    if (isKiro && refreshToken === null) {
-      skipped.push(`${label}: Kiro OAuth account has no refresh token`);
+    const isOAuth = OAUTH_PROVIDERS.has(provider);
+    const refreshToken = isOAuth ? text(entry.refreshToken) : null;
+    if (isOAuth && refreshToken === null) {
+      skipped.push(`${label}: ${provider} OAuth account has no refresh token`);
       return;
     }
     accounts.push({
@@ -240,26 +293,30 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       credential_ciphertext: {
         __bytes: encryptCredential(credential).toString("base64"),
       },
-      ...(isKiro ? { credential_fingerprint: hashSecret(credential) } : {}),
+      ...(isOAuth ? { credential_fingerprint: hashSecret(credential) } : {}),
       credential_kind: OAUTH_PROVIDERS.has(provider) ? "oauth" : "api_key",
-      ...(isKiro && refreshToken !== null ? { auth_state: kiroAuthState(entry, refreshToken) } : {}),
+      ...(provider === "kiro" && refreshToken !== null
+        ? { auth_state: kiroAuthState(entry, refreshToken) }
+        : provider === "antigravity" && text(entry.projectId) !== null
+          ? { auth_state: { projectId: text(entry.projectId) } }
+          : {}),
       status: bool(entry.isActive, true) ? "active" : "disabled",
       consecutive_failures: 0,
       model_cooldowns: {},
       created_at: { __date: isoDate(entry.createdAt, now) },
     });
-    if (isKiro && refreshToken !== null) {
+    if (isOAuth && refreshToken !== null) {
       oauthStates.push({
         provider_account_id: accountId,
         refresh_ciphertext: { __bytes: encryptCredential(refreshToken).toString("base64") },
-        expires_at: { __date: isoDate(entry.expiresAt, now) },
+        ...(text(entry.expiresAt) !== null
+          ? { expires_at: { __date: isoDate(entry.expiresAt, now) } }
+          : {}),
       });
     }
   });
 
   // ── Provider nodes → BYOK providers ──────────────────────────────────────
-  const providers: BackupRow[] = [];
-  const models: BackupRow[] = [];
   rows(source.providerNodes).forEach((entry, index) => {
     const type = text(entry.type);
     const prefix = text(entry.prefix) ?? text(entry.name);
@@ -374,13 +431,24 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
   // ── Custom models (a flat list of extra ids) ─────────────────────────────
   let customModelCount = 0;
   for (const entry of rows(source.customModels)) {
-    const providerId = text(entry.provider) ?? text(entry.providerId);
+    // 9Router writes the owning provider under `providerAlias` (the alias
+    // callers address, e.g. `cbai`); `provider`/`providerId` are the older
+    // spellings checked first for compatibility with earlier exports.
+    const providerId = text(entry.provider) ?? text(entry.providerId) ?? text(entry.providerAlias);
     const modelId = text(entry.id) ?? text(entry.modelId) ?? text(entry.name);
     if (providerId === null || modelId === null) {
       skipped.push("custom model without a provider and model id");
       continue;
     }
     const mapped = PROVIDER_MAP[providerId] ?? providerId;
+    if (mapped === providerId && !seenProviderIds.has(providerId) && !(providerId in PROVIDER_MAP)) {
+      // A custom-model alias with no provider row (e.g. an ad-hoc
+      // `openai-compatible-chat-*` node id whose node config is not in this
+      // export): no BYOK base URL accompanies it, so importing a bare model
+      // row would violate the models→providers FK. Reported, not guessed.
+      skipped.push(`custom model "${modelId}": provider "${providerId}" is not a known provider and has no node config in this export`);
+      continue;
+    }
     models.push({
       id: crypto.randomUUID(),
       provider_id: mapped,
