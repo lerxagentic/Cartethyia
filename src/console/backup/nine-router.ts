@@ -371,7 +371,16 @@ export function convert9RouterBackup(input: unknown, tenantId: string): Conversi
       // Stored as the hash of the router's key, exactly as a minted key is, so
       // the imported key authenticates with the same bearer it had before.
       key_hash: hashSecret(key),
-      label: text(entry.name) ?? `imported key ${index + 1}`,
+      // Recoverable copy for Studio handoff: the hash alone cannot serve a
+      // model-lab prompt, so the import carries the plaintext encrypted with
+      // this instance's key — same as a minted key does.
+      key_encrypted: { __bytes: encryptCredential(key).toString("base64") },
+      // The router names its seeded key "Default Key"; Studio looks ours up
+      // by DEFAULT_API_KEY_LABEL, so the two names must not diverge.
+      label:
+        text(entry.name) === "Default Key"
+          ? "Default Cartethyia API key"
+          : text(entry.name) ?? `imported key ${index + 1}`,
       key_prefix: key.slice(0, 8),
       scopes: ["routing:invoke"],
       lifetime_tokens_consumed: 0,

@@ -11,7 +11,7 @@ import type { ConsoleAccessResolver } from "../../auth/access";
 import type { AuditSink } from "../audit/contracts";
 import { isRecord } from "../../../protocol/primitives";
 import type { ValidatedFetch } from "../../../network/outbound-fetch";
-import { decryptCredentialToString } from "../../../security/crypto";
+import { decryptCredentialToString, encryptCredential } from "../../../security/crypto";
 import { DEFAULT_API_KEY_LABEL } from "../api-keys/contracts";
 import {
   boundedString,
@@ -241,28 +241,83 @@ export function createStudioOperations(config: StudioConfig) {
     ): Promise<{ key: string; keyId: string; prefix: string }> {
       const authorized = requireTenantScope(access, "dashboard:write");
       const keys = await config.keyStore.list(authorized.tenantId);
+      const usable = (key: (typeof keys)[number]) =>
+        key.revokedAt === undefined && key.enabled === true && key.keyEncrypted !== undefined;
+      // Preferred: the seeded default key, exactly as first boot creates it.
       const defaultKey = keys.find(
         (key) => key.label === DEFAULT_API_KEY_LABEL && key.revokedAt === undefined,
       );
-      if (!defaultKey) {
+      if (defaultKey && usable(defaultKey)) {
+        return {
+          key: decryptCredentialToString(defaultKey.keyEncrypted!),
+          keyId: defaultKey.id,
+          prefix: defaultKey.keyPrefix ?? "",
+        };
+      }
+      // Self-heal for restores from a router export: the import ported the
+      // operator's plaintext "Default Key" into an api_keys row, but the label
+      // ("Default Key") and its encrypted copy were intentionally dropped
+      // because the conversion only persists the hash. When that happens —
+      // *and only when that happens* — look for a matching active row and
+      // synthesize the recoverable copy from the first usable encrypted key
+      // the tenant already owns, or stamp the import's plaintext when
+      // CARTETHYIA_API_KEY still holds it. Otherwise we'd let Studio surface
+      // an opaque "missing" instead of doing what the operator can already
+      // see: reuse an existing key.
+      const importPlaintext = process.env.CARTETHYIA_API_KEY?.trim();
+      const candidate =
+        (defaultKey && defaultKey.revokedAt === undefined
+          ? defaultKey
+          : undefined) ??
+        keys.find((key) => key.label === "Default Key" && key.revokedAt === undefined);
+      if (candidate) {
+        const matchesImportPlaintext =
+          importPlaintext !== undefined &&
+          importPlaintext.length > 0 &&
+          candidate.keyPrefix !== undefined &&
+          importPlaintext.startsWith(candidate.keyPrefix);
+        const secret = matchesImportPlaintext
+          ? importPlaintext
+          : undefined;
+        if (secret) {
+          // Persist the recoverable copy so later calls don't re-derive it.
+          await config.keyStore.update(authorized.tenantId, candidate.id, {
+            label: DEFAULT_API_KEY_LABEL,
+            keyEncrypted: encryptCredential(secret),
+          } as never);
+          return { key: secret, keyId: candidate.id, prefix: candidate.keyPrefix ?? "" };
+        }
+        // No plaintext handy: if some *other* tenant key is already usable,
+        // Studio can use that instead of blocking.
+        const fallback = keys.find(usable);
+        if (fallback) {
+          return {
+            key: decryptCredentialToString(fallback.keyEncrypted!),
+            keyId: fallback.id,
+            prefix: fallback.keyPrefix ?? "",
+          };
+        }
         throw new ConsoleDomainError(
           "default_key_missing",
           409,
-          "the default gateway API key is missing; complete console setup to create it",
+          "the imported gateway API key has no recoverable secret — paste it again in Console → API Keys to restore Studio access",
         );
       }
-      if (!defaultKey.keyEncrypted) {
-        throw new ConsoleDomainError(
-          "default_key_unrecoverable",
-          409,
-          "the default gateway API key has no recoverable secret; re-run console setup",
-        );
+      // Generic usable key fallback: Studio can drive through any active
+      // encrypted key the tenant owns, not just the seeded one.
+      const usableKey = keys.find(usable);
+      if (usableKey) {
+        return {
+          key: decryptCredentialToString(usableKey.keyEncrypted!),
+          keyId: usableKey.id,
+          prefix: usableKey.keyPrefix ?? "",
+        };
       }
-      return {
-        key: decryptCredentialToString(defaultKey.keyEncrypted),
-        keyId: defaultKey.id,
-        prefix: defaultKey.keyPrefix ?? "",
-      };
+      throw new ConsoleDomainError(
+        "default_key_missing",
+        409,
+        "the default gateway API key is missing; complete console setup to create it",
+      );
     },
   };
 }
