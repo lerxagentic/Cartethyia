@@ -51,6 +51,8 @@ const CliTools = lazyWithRetry(() => import("./routes/CliTools"), "cli-tools");
 const CliToolDetail = lazyWithRetry(() => import("./routes/CliToolDetail"), "cli-tool-detail");
 const ConsoleLogPage = lazyWithRetry(() => import("./features/logs/ConsoleLogPage"), "console-log");
 const Studio = lazyWithRetry(() => import("./routes/Studio"), "studio");
+const Arena = lazyWithRetry(() => import("./routes/Arena"), "arena");
+const PrdBuilder = lazyWithRetry(() => import("./routes/PrdBuilder"), "prd-builder");
 
 /**
  * Forwards shell-wide session transitions into router navigation. A 401 means
@@ -182,6 +184,8 @@ function ProtectedRoutes(): ReactNode {
           <Route path="/proxy" element={<Proxy />} />
           <Route path="/console-log" element={<ConsoleLogPage />} />
           <Route path="/model-lab" element={<Studio />} />
+          <Route path="/arena" element={<Arena />} />
+          <Route path="/prd-builder" element={<PrdBuilder />} />
           <Route path="/cli-tools" element={<CliTools />} />
           <Route path="/cli-tools/:toolId" element={<CliToolDetail />} />
           <Route path="/settings" element={<Settings />} />

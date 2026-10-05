@@ -17,8 +17,10 @@ import {
   ShieldAlert,
   ScrollText,
   Sun,
+  Swords,
   Terminal,
   Timer,
+  FileText,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -55,9 +57,11 @@ export const navigationGroups: readonly NavGroupDef[] = [
     label: "Main",
     items: [
       { label: "Overview", path: "/", icon: LayoutDashboard },
+      { label: "Model Lab", path: "/model-lab", icon: FlaskConical },
+      { label: "Compare Models", path: "/arena", icon: Swords },
+      { label: "PRD Builder", path: "/prd-builder", icon: FileText },
       { label: "Usage", path: "/usage", icon: Activity },
       { label: "Providers", path: "/providers", icon: Server },
-      { label: "Model Lab", path: "/model-lab", icon: FlaskConical },
     ],
   },
   {
@@ -94,6 +98,14 @@ const titlesMap: Record<string, { title: string; sub: string }> = {
   },
   "/console-log": { title: "Console Log", sub: "Live server logs and audit trail" },
   "/model-lab": { title: "Model Lab", sub: "Live model playground — chat, thinking, and image generation" },
+  "/arena": {
+    title: "Compare Models",
+    sub: "Live multi-model battle, streaming speed comparison, and reasoning evaluation",
+  },
+  "/prd-builder": {
+    title: "PRD Builder",
+    sub: "One-pass structured Product Requirements Document generator",
+  },
   "/cli-tools": {
     title: "CLI Tools",
     sub: "Claude Code CLI, OpenCode, and local developer tool integrations",
@@ -627,9 +639,12 @@ function FooterClock() {
   const isHealthy = healthQuery.data?.status === "healthy";
   const isError = healthQuery.isError;
   const uptimeSeconds = healthQuery.data?.uptime_seconds;
-  // Immersive pages (Model Lab) hide the ops status pill — a chatbot
+  // Immersive pages (Model Lab, Arena, PRD Builder) hide the ops status pill — a chatbot/workspace
   // surface should not narrate gateway health at the user.
-  const hideStatus = location.pathname === "/model-lab";
+  const hideStatus =
+    location.pathname === "/model-lab" ||
+    location.pathname === "/arena" ||
+    location.pathname === "/prd-builder";
 
   const fmt = (d: Date) => d.toLocaleTimeString("en-GB", { timeZone: "UTC", hour12: false });
   const fmtLocal = (d: Date) => d.toLocaleTimeString("en-GB", { hour12: false });
@@ -893,7 +908,9 @@ export function DashboardShell({
           </main>
 
           {/* Footer Taskbar Clock — hidden on immersive pages */}
-          {location.pathname !== "/model-lab" ? (
+          {location.pathname !== "/model-lab" &&
+          location.pathname !== "/arena" &&
+          location.pathname !== "/prd-builder" ? (
             <div
               style={{ marginTop: "auto", paddingTop: "12px", paddingBottom: "8px", width: "100%" }}
             >
