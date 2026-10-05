@@ -366,8 +366,8 @@ export default function ImageLab(): ReactNode {
             </div>
 
             {/* Actions Bar */}
-            <Inline gap="10px" style={{ alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
-              <Inline gap="8px">
+            <Inline gap="10px" style={{ alignItems: "center", justifyContent: "space-between", marginTop: "4px", flexWrap: "wrap" }}>
+              <Inline gap="8px" style={{ flexWrap: "wrap" }}>
                 {generating ? (
                   <Button variant="danger" size="sm" onClick={handleStop}>
                     Stop Generating
@@ -434,7 +434,7 @@ export default function ImageLab(): ReactNode {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))",
               gap: "16px",
             }}
           >

@@ -442,11 +442,11 @@ export default function Arena(): ReactNode {
         </CardBody>
       </Card>
 
-      {/* Arena Grid: 2, 3, or 4 equal columns */}
+      {/* Arena Grid: responsive 1 col on mobile, 2 on tablet, up to 4 on desktop */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `repeat(${slots.length <= 2 ? 2 : slots.length === 3 ? 3 : 4}, minmax(0, 1fr))`,
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 290px), 1fr))",
           gap: "14px",
           alignItems: "stretch",
         }}

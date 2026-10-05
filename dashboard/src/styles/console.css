@@ -3061,11 +3061,21 @@
   animation: topology-edge-dash 0.18s linear infinite, topology-edge-flicker 0.22s steps(3) infinite;
 }
 
+.topology-canvas-container {
+  background: radial-gradient(ellipse at 50% 50%, rgba(28, 28, 34, 0.75) 0%, rgba(10, 10, 14, 0.96) 100%);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+:root[data-theme="light"] .topology-canvas-container,
+html[data-theme="light"] .topology-canvas-container {
+  background: radial-gradient(ellipse at 50% 50%, #ffffff 0%, #f4ede4 100%) !important;
+}
+
 .react-flow-controls-custom {
   background: var(--surface-1, #18181b) !important;
   border: 1px solid var(--inner-border, #27272a) !important;
   border-radius: 8px !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
   overflow: hidden !important;
 }
 
@@ -3081,6 +3091,19 @@
   justify-content: center !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
+}
+
+:root[data-theme="light"] .react-flow-controls-custom button,
+html[data-theme="light"] .react-flow-controls-custom button {
+  background: #ffffff !important;
+  color: #52525b !important;
+  border-bottom: 1px solid #e4d7cb !important;
+}
+
+:root[data-theme="light"] .react-flow-controls-custom button:hover,
+html[data-theme="light"] .react-flow-controls-custom button:hover {
+  background: #f4eee7 !important;
+  color: #18181b !important;
 }
 
 .react-flow-controls-custom button:last-child {

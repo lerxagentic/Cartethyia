@@ -385,8 +385,8 @@ export default function PrdBuilder(): ReactNode {
             </div>
 
             {/* Actions Bar */}
-            <Inline gap="10px" style={{ alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
-              <Inline gap="8px">
+            <Inline gap="10px" style={{ alignItems: "center", justifyContent: "space-between", marginTop: "4px", flexWrap: "wrap" }}>
+              <Inline gap="8px" style={{ flexWrap: "wrap" }}>
                 {generating ? (
                   <Button variant="danger" size="sm" onClick={handleStop}>
                     <Square size={14} /> Stop generation
@@ -422,7 +422,7 @@ export default function PrdBuilder(): ReactNode {
               </Inline>
 
               {document.trim().length > 0 ? (
-                <Inline gap="8px">
+                <Inline gap="8px" style={{ flexWrap: "wrap" }}>
                   <div
                     style={{
                       display: "inline-flex",

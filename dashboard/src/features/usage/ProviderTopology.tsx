@@ -8,14 +8,16 @@ import {
   getBezierPath,
   type Node,
   type Edge,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Radio, Zap, Sparkles } from "lucide-react";
 import { Badge } from "../../components/ui/badge";
 import { Inline } from "../../components/ui/inline";
+import { useConsoleLogStream } from "../../hooks/logs";
 
-// Timeout before an active provider beam returns to idle (ms)
-const ACTIVE_LINGER_MS = 12000;
+// Active beam linger duration (ms)
+const ACTIVE_LINGER_MS = 10000;
 
 export interface TopologyProviderMeta {
   readonly id: string;
@@ -32,7 +34,7 @@ export const TOPOLOGY_PROVIDER_METAS: Record<string, TopologyProviderMeta> = {
   cb: { id: "cb", name: "CodeBuddy", color: "#3B82F6", icon: "/providers/codebuddy-intl.png", textIcon: "CB" },
   cbcn: { id: "cbcn", name: "CodeBuddy CN", color: "#3B82F6", icon: "/providers/codebuddy-cn.png", textIcon: "CN" },
   workbuddy: { id: "workbuddy", name: "WorkBuddy", color: "#3B82F6", icon: "/providers/workbuddy.png", textIcon: "WB" },
-  grok: { id: "grok", name: "Grok CLI (Build)", color: "#1DA1F2", icon: "/providers/grok-cli.png", textIcon: "GK" },
+  grok: { id: "grok", name: "Grok CLI", color: "#1DA1F2", icon: "/providers/grok-cli.png", textIcon: "GK" },
   xai: { id: "xai", name: "xAI Grok", color: "#1DA1F2", icon: "/providers/xai.png", textIcon: "XA" },
   dahl: { id: "dahl", name: "Dahl Inference", color: "#A855F7", icon: "/providers/dahl.png", textIcon: "DH" },
   opencode: { id: "opencode", name: "OpenCode Free", color: "#EC4899", icon: "/providers/opencode.png", textIcon: "OC" },
@@ -59,7 +61,7 @@ export function getProviderMeta(providerId: string): TopologyProviderMeta {
 }
 
 // Center Router Node: Leraie
-function RouterNode({ data }: { data: { activeCount: number } }): ReactNode {
+function RouterNode({ data }: { data: { activeCount: number; isCompact?: boolean } }): ReactNode {
   const powering = (data.activeCount || 0) > 0;
   return (
     <div
@@ -70,17 +72,17 @@ function RouterNode({ data }: { data: { activeCount: number } }): ReactNode {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: "10px",
-        padding: "10px 18px",
+        gap: "8px",
+        padding: data.isCompact ? "7px 12px" : "10px 18px",
         borderRadius: "14px",
         border: powering ? "2px solid #fde047" : "1.5px solid var(--accent)",
         background: powering
           ? "linear-gradient(135deg, rgba(229,106,74,0.3) 0%, rgba(250,204,21,0.25) 50%, rgba(34,211,238,0.25) 100%)"
-          : "var(--surface-primary)",
+          : "var(--surface-1)",
         boxShadow: powering
           ? "0 0 24px rgba(253,224,71,0.5), 0 0 40px rgba(34,211,238,0.3)"
-          : "0 4px 16px rgba(0,0,0,0.35)",
-        minWidth: "140px",
+          : "0 4px 16px rgba(0,0,0,0.12)",
+        minWidth: data.isCompact ? "110px" : "135px",
         cursor: "default",
       }}
     >
@@ -94,8 +96,8 @@ function RouterNode({ data }: { data: { activeCount: number } }): ReactNode {
         alt="Leraie"
         className={powering ? "topology-router-icon" : ""}
         style={{
-          width: "24px",
-          height: "24px",
+          width: data.isCompact ? "20px" : "24px",
+          height: data.isCompact ? "20px" : "24px",
           borderRadius: "6px",
           objectFit: "contain",
           display: "block",
@@ -105,7 +107,7 @@ function RouterNode({ data }: { data: { activeCount: number } }): ReactNode {
         <span
           className={powering ? "topology-router-label" : ""}
           style={{
-            fontSize: "14px",
+            fontSize: data.isCompact ? "12px" : "13.5px",
             fontWeight: 800,
             letterSpacing: "0.02em",
             color: powering ? "#fef08a" : "var(--text-primary)",
@@ -113,7 +115,7 @@ function RouterNode({ data }: { data: { activeCount: number } }): ReactNode {
         >
           Leraie
         </span>
-        <span style={{ fontSize: "10px", color: "var(--text-tertiary)", fontWeight: 500 }}>
+        <span style={{ fontSize: "9.5px", color: "var(--text-tertiary)", fontWeight: 500 }}>
           Gateway Core
         </span>
       </div>
@@ -122,12 +124,12 @@ function RouterNode({ data }: { data: { activeCount: number } }): ReactNode {
         <span
           className="topology-router-badge"
           style={{
-            marginLeft: "4px",
-            padding: "2px 7px",
+            marginLeft: "2px",
+            padding: "1px 6px",
             borderRadius: "999px",
             background: "#facc15",
             color: "#000",
-            fontSize: "11px",
+            fontSize: "10.5px",
             fontWeight: 800,
           }}
         >
@@ -147,10 +149,11 @@ interface ProviderNodeData {
   active: boolean;
   activeModel?: string;
   accountCount?: number;
+  isCompact?: boolean;
 }
 
 function ProviderNode({ data }: { data: ProviderNodeData }): ReactNode {
-  const { label, color, imageUrl, textIcon, active, activeModel } = data;
+  const { label, color, imageUrl, textIcon, active, activeModel, isCompact } = data;
   const [imgError, setImgError] = useState(false);
 
   return (
@@ -158,14 +161,16 @@ function ProviderNode({ data }: { data: ProviderNodeData }): ReactNode {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: "10px",
-        padding: "8px 14px",
+        gap: isCompact ? "6px" : "9px",
+        padding: isCompact ? "6px 10px" : "8px 14px",
         borderRadius: "12px",
         border: active ? `2px solid ${color}` : "1px solid var(--inner-border)",
-        background: active ? "var(--surface-primary)" : "var(--surface-muted)",
-        boxShadow: active ? `0 0 20px ${color}50, 0 4px 14px rgba(0,0,0,0.4)` : "0 2px 8px rgba(0,0,0,0.25)",
-        minWidth: "160px",
-        maxWidth: "240px",
+        background: "var(--surface-1)",
+        boxShadow: active
+          ? `0 0 20px ${color}55, 0 4px 14px rgba(0,0,0,0.15)`
+          : "0 2px 8px rgba(0,0,0,0.06)",
+        minWidth: isCompact ? "120px" : "155px",
+        maxWidth: isCompact ? "180px" : "240px",
         transition: "all 0.25s ease",
         cursor: "default",
       }}
@@ -178,9 +183,9 @@ function ProviderNode({ data }: { data: ProviderNodeData }): ReactNode {
       {/* Provider Icon */}
       <div
         style={{
-          width: "30px",
-          height: "30px",
-          borderRadius: "8px",
+          width: isCompact ? "24px" : "28px",
+          height: isCompact ? "24px" : "28px",
+          borderRadius: "7px",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -194,20 +199,20 @@ function ProviderNode({ data }: { data: ProviderNodeData }): ReactNode {
           <img
             src={imageUrl}
             alt={label}
-            style={{ width: "20px", height: "20px", objectFit: "contain" }}
+            style={{ width: isCompact ? "16px" : "18px", height: isCompact ? "16px" : "18px", objectFit: "contain" }}
             onError={() => setImgError(true)}
           />
         ) : (
-          <span style={{ fontSize: "11px", fontWeight: 800, color }}>{textIcon}</span>
+          <span style={{ fontSize: isCompact ? "9.5px" : "11px", fontWeight: 800, color }}>{textIcon}</span>
         )}
       </div>
 
       {/* Provider Details */}
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
           <span
             style={{
-              fontSize: "12.5px",
+              fontSize: isCompact ? "11px" : "12px",
               fontWeight: 700,
               color: active ? color : "var(--text-primary)",
               overflow: "hidden",
@@ -218,7 +223,7 @@ function ProviderNode({ data }: { data: ProviderNodeData }): ReactNode {
             {label}
           </span>
           {active ? (
-            <span style={{ display: "inline-flex", position: "relative", width: "7px", height: "7px", flexShrink: 0 }}>
+            <span style={{ display: "inline-flex", position: "relative", width: "6px", height: "6px", flexShrink: 0 }}>
               <span
                 style={{
                   position: "absolute",
@@ -229,7 +234,7 @@ function ProviderNode({ data }: { data: ProviderNodeData }): ReactNode {
                   animation: "ping 1s cubic-bezier(0,0,0.2,1) infinite",
                 }}
               />
-              <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: color }} />
+              <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: color }} />
             </span>
           ) : null}
         </div>
@@ -237,19 +242,20 @@ function ProviderNode({ data }: { data: ProviderNodeData }): ReactNode {
         {activeModel ? (
           <span
             style={{
-              fontSize: "10.5px",
+              fontSize: "10px",
               fontFamily: "var(--font-mono)",
               color: active ? "#22d3ee" : "var(--text-tertiary)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
+              fontWeight: 600,
             }}
             title={activeModel}
           >
             {activeModel}
           </span>
         ) : (
-          <span style={{ fontSize: "10px", color: "var(--text-tertiary)" }}>
+          <span style={{ fontSize: "9.5px", color: "var(--text-tertiary)" }}>
             {data.accountCount ? `${data.accountCount} active keys` : "Connected"}
           </span>
         )}
@@ -295,7 +301,7 @@ function TopologyEdge({
   const filterId = `topo-electric-${id}`;
 
   if (!active) {
-    return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke, strokeWidth: 1.5, opacity: 0.4 }} />;
+    return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke, strokeWidth: 1.5, opacity: 0.5 }} />;
   }
 
   return (
@@ -389,12 +395,14 @@ function buildLayout(
   providers: readonly string[],
   activeMap: Map<string, { model?: string; active: boolean }>,
   accountCounts: Record<string, number>,
+  containerWidth: number,
 ): { nodes: Node[]; edges: Edge[] } {
-  const nodeW = 180;
-  const nodeH = 34;
-  const routerW = 140;
-  const routerH = 48;
-  const nodeGap = 24;
+  const isCompact = containerWidth > 0 && containerWidth < 640;
+  const nodeW = isCompact ? 135 : 175;
+  const nodeH = isCompact ? 30 : 34;
+  const routerW = isCompact ? 115 : 140;
+  const routerH = isCompact ? 42 : 48;
+  const nodeGap = isCompact ? 14 : 22;
 
   const count = providers.length;
   if (count === 0) {
@@ -404,7 +412,7 @@ function buildLayout(
           id: "router",
           type: "router",
           position: { x: 0, y: 0 },
-          data: { activeCount: 0 },
+          data: { activeCount: 0, isCompact },
           draggable: false,
         },
       ],
@@ -412,9 +420,11 @@ function buildLayout(
     };
   }
 
+  // Adaptive radius based on container width
   const minRx = ((nodeW + nodeGap) * count) / (2 * Math.PI);
-  const rx = Math.max(300, minRx);
-  const ry = Math.max(180, rx * 0.55);
+  const baseRx = isCompact ? Math.max(160, Math.min(220, (containerWidth - 60) / 2)) : Math.max(280, minRx);
+  const rx = baseRx;
+  const ry = isCompact ? Math.max(130, rx * 0.72) : Math.max(170, rx * 0.55);
 
   let activeCount = 0;
   for (const v of activeMap.values()) {
@@ -428,7 +438,7 @@ function buildLayout(
     id: "router",
     type: "router",
     position: { x: -routerW / 2, y: -routerH / 2 },
-    data: { activeCount },
+    data: { activeCount, isCompact },
     draggable: false,
   });
 
@@ -472,6 +482,7 @@ function buildLayout(
         active,
         activeModel,
         accountCount,
+        isCompact,
       },
       draggable: false,
     });
@@ -501,13 +512,15 @@ export interface ProviderTopologyProps {
     readonly model?: string;
     readonly startedAt?: string;
   }>;
-  readonly inFlightCount?: number | null;
   readonly onSelectProvider?: (providerId: string) => void;
 }
 
 export default function ProviderTopology({
   recentRequests = [],
 }: ProviderTopologyProps): ReactNode {
+  // Connect to live console logs stream for 100% REALTIME detection!
+  const { lines, status: streamStatus } = useConsoleLogStream();
+
   // Primary providers displayed in the circular topology
   const providerList = useMemo(
     () => [
@@ -526,7 +539,27 @@ export default function ProviderTopology({
   const [activeMap, setActiveMap] = useState<Map<string, { model?: string; active: boolean }>>(new Map());
   const lastSeenRef = useRef<Map<string, { model: string; timestamp: number }>>(new Map());
 
-  // Listen to incoming recentRequests and update active map
+  // Track container width for responsive layout
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+  const rfInstanceRef = useRef<ReactFlowInstance | null>(null);
+
+  // Realtime hook: listen to SSE log stream line additions
+  useEffect(() => {
+    if (lines.length === 0) return;
+    const latest = lines[lines.length - 1];
+    if (!latest) return;
+
+    // Check if the log line is a proxy request event
+    const pid = latest.providerId?.toLowerCase();
+    if (pid) {
+      const model = latest.model || latest.routedModel || "";
+      lastSeenRef.current.set(pid, { model, timestamp: Date.now() });
+      setActiveMap((prev) => new Map(prev).set(pid, { model, active: true }));
+    }
+  }, [lines]);
+
+  // Secondary source: recent requests from Usage API
   useEffect(() => {
     const now = Date.now();
     for (const req of recentRequests) {
@@ -542,7 +575,7 @@ export default function ProviderTopology({
     }
   }, [recentRequests]);
 
-  // Tick timer to decay active beams back to idle after ACTIVE_LINGER_MS
+  // Decay timer: return active beams back to idle after ACTIVE_LINGER_MS
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -559,6 +592,24 @@ export default function ProviderTopology({
     return () => clearInterval(interval);
   }, []);
 
+  // Measure container width responsively with ResizeObserver
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        if (width > 0) {
+          setContainerWidth(width);
+          rfInstanceRef.current?.fitView({ padding: 0.14, duration: 200 });
+        }
+      }
+    });
+    ro.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
   const accountCounts = useMemo<Record<string, number>>(
     () => ({
       antigravity: 2,
@@ -573,14 +624,12 @@ export default function ProviderTopology({
   );
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providerList, activeMap, accountCounts),
-    [providerList, activeMap, accountCounts],
+    () => buildLayout(providerList, activeMap, accountCounts, containerWidth),
+    [providerList, activeMap, accountCounts, containerWidth],
   );
 
-  const fitOpts = { padding: 0.18, duration: 250 };
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const fitOpts = { padding: 0.14, duration: 250 };
 
-  // Quick simulation trigger for user test
   const handleSimulate = (pid: string, modelName: string) => {
     lastSeenRef.current.set(pid.toLowerCase(), { model: modelName, timestamp: Date.now() });
     setActiveMap((prev) => new Map(prev).set(pid.toLowerCase(), { model: modelName, active: true }));
@@ -598,19 +647,23 @@ export default function ProviderTopology({
     >
       {/* Top Banner Bar */}
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-        <Inline gap="8px" style={{ alignItems: "center" }}>
+        <Inline gap="8px" style={{ alignItems: "center", flexWrap: "wrap" }}>
           <Radio size={15} color="var(--accent)" />
           <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>
             Live Provider Connection Topology
           </span>
-          <Badge tone={activeMap.size > 0 ? "ok" : "default"} dot={activeMap.size > 0}>
-            {activeMap.size > 0 ? `${activeMap.size} Active Routing Beams` : "Monitoring In-Flight Traffic"}
+          <Badge tone={activeMap.size > 0 ? "ok" : "default"} dot={activeMap.size > 0 || streamStatus === "live"}>
+            {activeMap.size > 0
+              ? `${activeMap.size} Active Routing Beams`
+              : streamStatus === "live"
+              ? "Realtime Log Stream Active"
+              : "Monitoring Gateway Traffic"}
           </Badge>
         </Inline>
 
         {/* Quick Test Trigger Chips */}
-        <Inline gap="6px" style={{ alignItems: "center" }}>
-          <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>Simulate Pulse:</span>
+        <Inline gap="6px" style={{ alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>Test Beam:</span>
           <button
             type="button"
             onClick={() => handleSimulate("antigravity", "gemini-3.1-pro")}
@@ -662,14 +715,15 @@ export default function ProviderTopology({
       {/* ReactFlow Interactive Canvas */}
       <div
         ref={containerRef}
+        className="topology-canvas-container"
         style={{
-          height: "360px",
+          height: containerWidth < 640 ? "320px" : "420px",
           width: "100%",
           borderRadius: "12px",
           border: "1px solid var(--inner-border)",
-          background: "radial-gradient(ellipse at 50% 50%, rgba(20,20,25,0.7) 0%, rgba(10,10,14,0.95) 100%)",
           overflow: "hidden",
           position: "relative",
+          transition: "height 0.2s ease",
         }}
       >
         <ReactFlow
@@ -681,6 +735,10 @@ export default function ProviderTopology({
           fitViewOptions={fitOpts}
           minZoom={0.2}
           maxZoom={1.8}
+          onInit={(instance) => {
+            rfInstanceRef.current = instance;
+            setTimeout(() => instance.fitView(fitOpts), 60);
+          }}
           proOptions={{ hideAttribution: true }}
           panOnDrag
           zoomOnScroll
