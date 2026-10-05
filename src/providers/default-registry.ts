@@ -312,6 +312,11 @@ export const PROVIDER_CAPABILITIES = {
     modelDiscoveryRequiresCredential: false,
   },
   cb: {
+    // CodeBuddy intl's chat endpoint is `/v2/chat/completions` off the origin
+    // root (verified live: `/v2/...` answers 401 for a bad key, `/v1/...` and
+    // the bare path answer 404/405). Without this map the generic `/v1/…`
+    // default joined onto the root and every probe/dispatch 404'd.
+    endpointPathsByWireFamily: { chat: "/v2/chat/completions" },
     loadAdapter: async () => (await import("./integrations/buddy/codebuddy")).createCodeBuddyAdapter(),
     loadModels: async () => (await import("./integrations/buddy/codebuddy")).CODEBUDDY_MODELS,
     loadModelDiscovery: async () => async ({ credential, fetcher }) => (await import("./integrations/buddy/codebuddy")).discoverCodeBuddyModels({ credential, ...(fetcher === undefined ? {} : { fetcher }) }),
@@ -319,6 +324,7 @@ export const PROVIDER_CAPABILITIES = {
     loadQuotaCollector: quotaCapability(() => import("./integrations/buddy/codebuddy-quota"), "fetchCodeBuddyIntlQuota"),
   },
   cbcn: {
+    endpointPathsByWireFamily: { chat: "/v2/chat/completions" },
     loadAdapter: async () => (await import("./integrations/buddy/codebuddy-cn")).createCodeBuddyCnAdapter(),
     loadModels: async () => (await import("./integrations/buddy/codebuddy-cn")).CODEBUDDY_CN_MODELS,
     loadModelDiscovery: async () => async ({ credential, fetcher }) => (await import("./integrations/buddy/codebuddy-cn")).discoverCodeBuddyCnModels({ credential, ...(fetcher === undefined ? {} : { fetcher }) }),

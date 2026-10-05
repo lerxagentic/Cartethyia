@@ -20,9 +20,9 @@ import { fetchTencentBillingQuota } from "./buddy-quota-shared";
  */
 
 export const CODEBUDDY_CN_USAGE_URL =
-  `${providerBaseUrl("cbcn")}/billing/meter/get-user-resource`;
+  `${providerBaseUrl("cbcn")}/v2/billing/meter/get-user-resource`;
 export const CODEBUDDY_INTL_USAGE_URL =
-  `${providerBaseUrl("cb")}/billing/meter/get-user-resource`;
+  `${providerBaseUrl("cb")}/v2/billing/meter/get-user-resource`;
 
 type CodeBuddyProviderId = "cb" | "cbcn";
 

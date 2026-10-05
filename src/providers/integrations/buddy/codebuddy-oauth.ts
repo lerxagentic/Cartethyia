@@ -8,12 +8,12 @@ import {
   type BuddyOAuthVariant,
 } from "./buddy-oauth-shared";
 
-const CODEBUDDY_INTL_DEVICE_START_URL = `${providerBaseUrl("cb")}/plugin/auth/state`;
-const CODEBUDDY_INTL_DEVICE_POLL_URL = `${providerBaseUrl("cb")}/plugin/auth/token`;
-const CODEBUDDY_INTL_REFRESH_URL = `${providerBaseUrl("cb")}/plugin/auth/token/refresh`;
-const CODEBUDDY_CN_DEVICE_START_URL = `${providerBaseUrl("cbcn")}/plugin/auth/state`;
-const CODEBUDDY_CN_DEVICE_POLL_URL = `${providerBaseUrl("cbcn")}/plugin/auth/token`;
-const CODEBUDDY_CN_REFRESH_URL = `${providerBaseUrl("cbcn")}/plugin/auth/token/refresh`;
+const CODEBUDDY_INTL_DEVICE_START_URL = `${providerBaseUrl("cb")}/v2/plugin/auth/state`;
+const CODEBUDDY_INTL_DEVICE_POLL_URL = `${providerBaseUrl("cb")}/v2/plugin/auth/token`;
+const CODEBUDDY_INTL_REFRESH_URL = `${providerBaseUrl("cb")}/v2/plugin/auth/token/refresh`;
+const CODEBUDDY_CN_DEVICE_START_URL = `${providerBaseUrl("cbcn")}/v2/plugin/auth/state`;
+const CODEBUDDY_CN_DEVICE_POLL_URL = `${providerBaseUrl("cbcn")}/v2/plugin/auth/token`;
+const CODEBUDDY_CN_REFRESH_URL = `${providerBaseUrl("cbcn")}/v2/plugin/auth/token/refresh`;
 
 export const CODEBUDDY_INTL_VARIANT: BuddyOAuthVariant = {
   providerId: "cb",

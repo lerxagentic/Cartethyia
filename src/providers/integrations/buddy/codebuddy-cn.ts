@@ -108,7 +108,9 @@ const CODEBUDDY_CN_RAW: readonly BuddyRawEntry[] = [
   ["hy4-preview", "Hy4 Preview", true, true, 1_000_000, 64_000],
   ["deepseek-v4.1-flash", "DeepSeek V4.1 Flash", true, true, 1_000_000, 50_000],
 ];
-export const CODEBUDDY_CN_MODELS: readonly ModelDefinition[] = CODEBUDDY_CN_RAW.map((entry) => makeBuddyModel(entry, "cbcn"));
+export const CODEBUDDY_CN_MODELS: readonly ModelDefinition[] = CODEBUDDY_CN_RAW.map((entry) =>
+  makeBuddyModel(entry, "cbcn", "/v2/chat/completions"),
+);
 
 /** Reads the CodeBuddy CN console directory (same envelope as the intl site). */
 export async function discoverCodeBuddyCnModels(

@@ -80,7 +80,9 @@ function codeBuddyIntlPrePayload(
 // Model catalog — current CodeBuddy INTL catalog (20 entries)
 
 const CODEBUDDY_INTL_RAW: readonly BuddyRawEntry[] = BUDDY_SHARED_RAW;
-export const CODEBUDDY_MODELS: readonly ModelDefinition[] = CODEBUDDY_INTL_RAW.map((entry) => makeBuddyModel(entry, "cb"));
+export const CODEBUDDY_MODELS: readonly ModelDefinition[] = CODEBUDDY_INTL_RAW.map((entry) =>
+  makeBuddyModel(entry, "cb", "/v2/chat/completions"),
+);
 
 /**
  * Reads the CodeBuddy intl console directory.
@@ -97,7 +99,7 @@ export async function discoverCodeBuddyModels(
     providerId: CODEBUDDY_PROVIDER_ID,
     credential: input.credential,
     modelsPath: BUDDY_INTL_MODELS_PATH,
-    endpoint: undefined,
+    endpoint: "/v2/chat/completions",
     ...(input.signal ? { signal: input.signal } : {}),
     ...(input.fetcher ? { fetcher: input.fetcher } : {}),
   });
