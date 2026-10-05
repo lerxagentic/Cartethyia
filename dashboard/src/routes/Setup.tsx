@@ -73,10 +73,10 @@ export default function Setup(): ReactNode {
       <div className="card-solid auth-window">
         <div className="auth-header">
           <div className="auth-logo" aria-hidden="true">
-            C
+            L
           </div>
-          <h1 className="auth-title">Cartethyia Console Setup</h1>
-          <p className="auth-desc">Configure the administrator account for Cartethyia AI Gateway</p>
+          <h1 className="auth-title">Leraie Console Setup</h1>
+          <p className="auth-desc">Configure the administrator account for Leraie AI Gateway</p>
         </div>
 
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>

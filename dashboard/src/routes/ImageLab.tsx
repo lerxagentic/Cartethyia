@@ -416,7 +416,7 @@ export default function ImageLab(): ReactNode {
               Rendering Image…
             </div>
             <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-              Calling {model} via Cartethyia Gateway
+              Calling {model} via Leraie Gateway
             </div>
           </div>
         </Card>

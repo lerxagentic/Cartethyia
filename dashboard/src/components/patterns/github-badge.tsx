@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
  * Canonical repository link shared by every public surface, so the landing page
  * and the share page cannot drift onto different repositories.
  */
-export const GITHUB_REPO_URL = "https://github.com/risunCode/Cartethyia";
+export const GITHUB_REPO_URL = "https://github.com/lerxagentic/Cartethyia";
 
 /**
  * The badge host, declared here rather than imported from the backend CSP
@@ -15,7 +15,7 @@ export const GITHUB_REPO_URL = "https://github.com/risunCode/Cartethyia";
  */
 export const BADGE_IMAGE_ORIGIN = "https://img.shields.io";
 
-const REPO_SLUG = "risunCode/Cartethyia";
+const REPO_SLUG = "lerxagentic/Cartethyia";
 
 /**
  * Live star and fork counts, as shields.io SVG badges.
@@ -63,7 +63,7 @@ export function GithubBadge({ className = "" }: { className?: string }): ReactEl
       href={GITHUB_REPO_URL}
       target="_blank"
       rel="noreferrer"
-      aria-label="Cartethyia on GitHub"
+      aria-label="Leraie on GitHub"
     >
       <GithubMark size={15} />
       <img
