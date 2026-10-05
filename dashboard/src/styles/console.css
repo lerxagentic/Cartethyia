@@ -2972,3 +2972,128 @@
     flex-wrap: wrap;
   }
 }
+
+/* ===== Provider Connection Topology (Interactive Node Graph) ===== */
+@keyframes topology-router-pulse {
+  0%, 100% {
+    box-shadow: 0 0 10px #fde047, 0 0 24px rgba(245, 158, 11, 0.4), 0 0 36px rgba(34, 211, 238, 0.4), inset 0 0 12px rgba(253, 224, 71, 0.3);
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 16px #fef08a, 0 0 32px #facc15, 0 0 48px rgba(34, 211, 238, 0.6), inset 0 0 16px rgba(255, 255, 255, 0.4);
+  }
+}
+
+@keyframes topology-router-icon-shake {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px #fde047);
+    transform: rotate(0) scale(1);
+  }
+  25% {
+    filter: drop-shadow(0 0 8px #facc15);
+    transform: rotate(-4deg) scale(1.06);
+  }
+  75% {
+    filter: drop-shadow(0 0 8px #22d3ee);
+    transform: rotate(4deg) scale(1.06);
+  }
+}
+
+@keyframes topology-router-label-flicker {
+  0%, 100% {
+    text-shadow: 0 0 6px #fde047, 0 0 14px #22d3ee;
+  }
+  50% {
+    text-shadow: 0 0 10px #fff, 0 0 20px #facc15;
+  }
+}
+
+@keyframes topology-edge-dash {
+  to {
+    stroke-dashoffset: -36;
+  }
+}
+
+@keyframes topology-edge-flicker {
+  0%, 100% {
+    opacity: 0.85;
+  }
+  40% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 0.55;
+  }
+  70% {
+    opacity: 1;
+  }
+}
+
+.topology-router-core {
+  animation: topology-router-pulse 0.75s ease-in-out infinite;
+  border-color: #fde047 !important;
+}
+
+.topology-router-icon {
+  animation: topology-router-icon-shake 0.45s ease-in-out infinite;
+}
+
+.topology-router-label {
+  animation: topology-router-label-flicker 0.7s ease-in-out infinite;
+}
+
+.topology-router-badge {
+  box-shadow: 0 0 10px #fde047, 0 0 16px rgba(34, 211, 238, 0.6);
+}
+
+.topology-edge-kame {
+  stroke-dasharray: 8 6;
+  animation: topology-edge-dash 0.22s linear infinite;
+}
+
+.topology-edge-halo {
+  animation: topology-edge-flicker 0.18s steps(2) infinite;
+}
+
+.topology-edge-plasma {
+  stroke-dasharray: 14 10;
+  animation: topology-edge-dash 0.18s linear infinite, topology-edge-flicker 0.22s steps(3) infinite;
+}
+
+.react-flow-controls-custom {
+  background: var(--surface-1, #18181b) !important;
+  border: 1px solid var(--inner-border, #27272a) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  overflow: hidden !important;
+}
+
+.react-flow-controls-custom button {
+  background: var(--surface-1, #18181b) !important;
+  color: var(--text-secondary, #a1a1aa) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--inner-border, #27272a) !important;
+  width: 28px !important;
+  height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.react-flow-controls-custom button:last-child {
+  border-bottom: 0 !important;
+}
+
+.react-flow-controls-custom button:hover {
+  background: var(--surface-2, #27272a) !important;
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.react-flow-controls-custom button svg {
+  fill: currentColor !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+}
