@@ -23,6 +23,8 @@ import type { BackupSection } from "./contracts";
 import { deleteAll, exportBackup, applyRestore, type DeleteAllResult, type DeleteAllScope } from "./store";
 import { detectFormat, restoreOrder, validateRestorePayload } from "./validate";
 import { convert9RouterBackup, type ImportReport } from "./nine-router";
+import { convertToNineRouterExport, type NineRouterExportReport } from "./to-nine-router";
+import { eq } from "drizzle-orm";
 
 export interface BackupServiceOptions {
   readonly db: CartethyiaDatabase;
@@ -131,6 +133,15 @@ export class BackupService {
   }
 
   /** Permanently deletes selected tenant configuration after re-authentication. */
+  async exportNineRouter(
+    password: unknown,
+    tenantId: string,
+  ): Promise<NineRouterExportReport> {
+    if (typeof password !== "string" || !(await this.options.verifyPassword(password))) {
+      throw new ConsoleDomainError("unauthorized", 401, "password is incorrect");
+    }
+    return convertToNineRouterExport(this.options.db, tenantId);
+  }
   async deleteAll(password: unknown, scopes: readonly DeleteAllScope[], tenantId: string): Promise<DeleteAllResult> {
     if (typeof password !== "string" || !(await this.options.verifyPassword(password))) {
       throw new ConsoleDomainError("unauthorized", 401, "password is incorrect");
@@ -160,5 +171,58 @@ export class BackupService {
       tenantId,
     );
     return counts;
+  }
+
+  /** Reads the tenant's auto-backup preferences (bot token masked for read). */
+  async getAutoBackup(tenantId: string): Promise<{ enabled: boolean; botTokenMasked: string | null; chatId: string | null; intervalHours: number; lastSentAt: string | null; lastError: string | null }> {
+    const { consoleSettings } = await import("../../persistence/schema");
+    const rows = await this.options.db.select({ preferences: consoleSettings.preferences }).from(consoleSettings).where(eq(consoleSettings.tenantId, tenantId));
+    const ab = (rows[0]?.preferences as Record<string, unknown> | undefined)?.autoBackup as Record<string, unknown> | undefined;
+    return {
+      enabled: ab?.enabled === true,
+      botTokenMasked: typeof ab?.botToken === "string" && ab.botToken.length >= 8 ? `${ab.botToken.slice(0, 6)}…${ab.botToken.slice(-4)}` : null,
+      chatId: typeof ab?.chatId === "string" ? ab.chatId : null,
+      intervalHours: typeof ab?.intervalHours === "number" ? ab.intervalHours : 24,
+      lastSentAt: typeof ab?.lastSentAt === "string" ? ab.lastSentAt : null,
+      lastError: typeof ab?.lastError === "string" ? ab.lastError : null,
+    };
+  }
+
+  /** Upserts auto-backup preferences; an empty bot token clears the stored one. */
+  async updateAutoBackup(
+    password: unknown,
+    tenantId: string,
+    patch: { enabled?: boolean; botToken?: string; chatId?: string; intervalHours?: number },
+  ): Promise<{ enabled: boolean; botTokenMasked: string | null; chatId: string | null; intervalHours: number; lastSentAt: string | null; lastError: string | null }> {
+    if (typeof password !== "string" || !(await this.options.verifyPassword(password))) {
+      throw new ConsoleDomainError("unauthorized", 401, "password is incorrect");
+    }
+    const { consoleSettings } = await import("../../persistence/schema");
+    const rows = await this.options.db.select({ preferences: consoleSettings.preferences }).from(consoleSettings).where(eq(consoleSettings.tenantId, tenantId));
+    const prefs = (rows[0]?.preferences ?? {}) as Record<string, unknown>;
+    const prev = (prefs.autoBackup ?? {}) as Record<string, unknown>;
+    const nextAutoBackup = {
+      ...prev,
+      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+      ...(patch.botToken !== undefined ? { botToken: patch.botToken === "" ? undefined : patch.botToken } : {}),
+      ...(patch.chatId !== undefined ? { chatId: patch.chatId } : {}),
+      ...(patch.intervalHours !== undefined ? { intervalHours: patch.intervalHours } : {}),
+    };
+    if (nextAutoBackup.botToken === undefined) delete nextAutoBackup.botToken;
+    const nextPrefs = { ...prefs, autoBackup: nextAutoBackup };
+    await this.options.db
+      .insert(consoleSettings)
+      .values({ tenantId, preferences: nextPrefs as never, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: consoleSettings.tenantId, set: { preferences: nextPrefs as never, updatedAt: new Date() } });
+    return this.getAutoBackup(tenantId);
+  }
+
+  /** Fires an auto-backup run immediately (bypassing the interval gate). */
+  async runAutoBackupNow(password: unknown, tenantId: string, fetcher?: typeof fetch): Promise<{ sent: boolean; error?: string }> {
+    if (typeof password !== "string" || !(await this.options.verifyPassword(password))) {
+      throw new ConsoleDomainError("unauthorized", 401, "password is incorrect");
+    }
+    const { runAutoBackupForTenant } = await import("../../workers/auto-backup");
+    return runAutoBackupForTenant({ db: this.options.db, tenantId, fetcher, force: true });
   }
 }

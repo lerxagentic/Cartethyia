@@ -82,12 +82,25 @@ const importBody = t.Object({
 const exportQuery = t.Object({
   password: t.String(),
   sections: t.Optional(t.String()),
+  /** `9router` emits a file the 9Router's Import Database accepts. */
+  format: t.Optional(t.Union([t.Literal("native"), t.Literal("9router")])),
 });
 
 const deleteAllBody = t.Object({
   password: t.String(),
   scopes: t.Array(t.Union(DELETE_ALL_SCOPES.map((scope) => t.Literal(scope))), { minItems: 1 }),
 });
+
+const autoBackupPatchBody = t.Object({
+  password: t.String(),
+  enabled: t.Optional(t.Boolean()),
+  /** Empty string clears a stored token; omitted leaves it untouched. */
+  botToken: t.Optional(t.String()),
+  chatId: t.Optional(t.String()),
+  intervalHours: t.Optional(t.Number({ minimum: 1, maximum: 24 * 30 })),
+});
+
+const autoBackupRunBody = t.Object({ password: t.String() });
 
 function parseSections(raw: string | undefined): readonly BackupSection[] | undefined {
   if (raw === undefined || raw.trim().length === 0) return undefined;
@@ -107,6 +120,18 @@ export function createBackupRoutes(config: BackupRoutesConfig): Elysia {
         }
         const backup = config.backupFor(request);
         const sections = parseSections(query.sections);
+        if (query.format === "9router") {
+          // The 9Router shape is a plain JSON payload (no password echo, no
+          // native envelope); credentials are decrypted inside the converter
+          // with the same threat model as the native export.
+          const report = await backup.exportNineRouter(query.password, access.tenantId);
+          set.headers["content-disposition"] = `attachment; filename="9router-backup-${new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")}.json"`;
+          set.headers["content-type"] = "application/json; charset=utf-8";
+          set.headers["cache-control"] = "no-store";
+          return { ...report.payload, _meta: { counts: report.counts, omitted: report.omitted } };
+        }
         const { payload } = await backup.export({
           password: query.password,
           tenantId: access.tenantId,
@@ -171,6 +196,42 @@ export function createBackupRoutes(config: BackupRoutesConfig): Elysia {
         return result;
       } catch (error) {
         return errorResponse(error, set, "Backup import failed");
+      }
+    })
+    .get("/auto-backup", async ({ request, set }) => {
+      try {
+        const access = requireAnyScope(config.accessResolver(request), BACKUP_SCOPES);
+        if (access.tenantId === null) throw new ConsoleDomainError("tenant_required", 403, "Tenant isolation required");
+        return await config.backupFor(request).getAutoBackup(access.tenantId);
+      } catch (error) {
+        return errorResponse(error, set, "Auto-backup read failed");
+      }
+    })
+    .patch("/auto-backup", { body: autoBackupPatchBody }, async ({ request, body, set }) => {
+      try {
+        const access = requireAnyScope(config.accessResolver(request), BACKUP_SCOPES);
+        if (access.tenantId === null) throw new ConsoleDomainError("tenant_required", 403, "Tenant isolation required");
+        const result = await config.backupFor(request).updateAutoBackup(body.password, access.tenantId, {
+          ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
+          ...(body.botToken === undefined ? {} : { botToken: body.botToken }),
+          ...(body.chatId === undefined ? {} : { chatId: body.chatId }),
+          ...(body.intervalHours === undefined ? {} : { intervalHours: body.intervalHours }),
+        });
+        await config.auditSink?.record({ access, action: "backup.auto_backup_update", target: access.tenantId, detail: { enabled: result.enabled } });
+        return result;
+      } catch (error) {
+        return errorResponse(error, set, "Auto-backup update failed");
+      }
+    })
+    .post("/auto-backup/run", { body: autoBackupRunBody }, async ({ request, body, set }) => {
+      try {
+        const access = requireAnyScope(config.accessResolver(request), BACKUP_SCOPES);
+        if (access.tenantId === null) throw new ConsoleDomainError("tenant_required", 403, "Tenant isolation required");
+        const result = await config.backupFor(request).runAutoBackupNow(body.password, access.tenantId);
+        await config.auditSink?.record({ access, action: "backup.auto_backup_run", target: access.tenantId, detail: { sent: result.sent, error: result.error } });
+        return result;
+      } catch (error) {
+        return errorResponse(error, set, "Auto-backup run failed");
       }
     })
     .post("/delete-all", { body: deleteAllBody }, async ({ request, body, set }) => {

@@ -18,13 +18,40 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
  * dashboard hands the parsed file over and renders the report it gets back.
  */
 export function useExportBackup() {
-  return useMutation<BackupExportResponse, ApiErrorShape, { password: string; sections?: string }>({
-    mutationFn: ({ password, sections }) => {
+  return useMutation<BackupExportResponse, ApiErrorShape, { password: string; sections?: string; format?: "native" | "9router" }>({
+    mutationFn: ({ password, sections, format }) => {
       const query = new URLSearchParams({ password });
       if (sections !== undefined && sections.length > 0) query.set("sections", sections);
+      // `native` is the server default; only send the param when asking for 9router.
+      if (format === "9router") query.set("format", "9router");
       return consoleRequest<BackupExportResponse>(`/backup/export?${query.toString()}`);
     },
   });
+}
+
+export interface AutoBackupStatus {
+  readonly enabled: boolean;
+  readonly botTokenMasked: string | null;
+  readonly chatId: string | null;
+  readonly intervalHours: number;
+  readonly lastSentAt: string | null;
+  readonly lastError: string | null;
+}
+
+export function useAutoBackupStatus() {
+  return {
+    get: () => consoleRequest<AutoBackupStatus>("/backup/auto-backup"),
+    update: (password: string, patch: { enabled?: boolean; botToken?: string; chatId?: string; intervalHours?: number }) =>
+      consoleRequest<AutoBackupStatus>("/backup/auto-backup", {
+        method: "PATCH",
+        body: JSON.stringify({ password, ...patch }),
+      }),
+    runNow: (password: string) =>
+      consoleRequest<{ sent: boolean; error?: string }>("/backup/auto-backup/run", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      }),
+  };
 }
 
 /**

@@ -810,6 +810,20 @@ export interface ConsoleSettingsPreferences {
   telemetryPayloads?: "full" | "metadata" | "none";
   privacyMode?: "masked" | "full";
   webSearchOrder?: readonly string[];
+  /**
+   * Scheduled native backup delivered to a Telegram chat (mirrors 9Router's
+   * auto-backup). `lastSentAt`/`lastError` are scheduler state, persisted so
+   * a restart never re-sends a backup that already went out.
+   */
+  autoBackup?: {
+    readonly enabled?: boolean;
+    readonly botToken?: string;
+    readonly chatId?: string;
+    /** Minimum hours between sends. Defaults to 24; floors at 1. */
+    readonly intervalHours?: number;
+    readonly lastSentAt?: string | null;
+    readonly lastError?: string | null;
+  };
 }
 
 export const consoleSettings = pgTable("console_settings", {

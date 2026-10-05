@@ -1,5 +1,5 @@
 import { DatabaseBackup, Download, Trash2, Upload } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { Card, CardBody, CardHeader } from "./ui/card";
 import { Input } from "./ui/input";
@@ -8,7 +8,7 @@ import { Stack } from "./ui/stack";
 import { toast } from "../shared/toast";
 import { downloadTextFile } from "../shared/download";
 import { getErrorMessage } from "../shared/helpers";
-import { useDeleteAllBackup, useExportBackup, useRestoreBackup } from "../hooks/backup";
+import { useDeleteAllBackup, useExportBackup, useRestoreBackup, useAutoBackupStatus, type AutoBackupStatus } from "../hooks/backup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { BackupImportReport } from "../data/contracts";
 import type { DeleteAllScope } from "../../../src/console/backup/store";
@@ -67,6 +67,124 @@ function ImportReportPanel({ report }: { readonly report: BackupImportReport }):
   );
 }
 
+/** Telegram auto-backup schedule: read status, save config, send a test backup now. */
+function AutoBackupSection({ password }: { readonly password: string }): ReactNode {
+  const statusApi = useAutoBackupStatus();
+  const [status, setStatus] = useState<AutoBackupStatus | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [botToken, setBotToken] = useState("");
+  const [chatId, setChatId] = useState("");
+  const [intervalHours, setIntervalHours] = useState(24);
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => {
+    try {
+      const s = await statusApi.get();
+      setStatus(s);
+      setEnabled(s.enabled);
+      setChatId(s.chatId ?? "");
+      setIntervalHours(s.intervalHours);
+    } catch {
+      // status is a convenience; the section stays usable without it
+    }
+  };
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const save = async () => {
+    if (password.length === 0) {
+      toast.error("Enter your console password first (the field at the top).");
+      return;
+    }
+    setBusy(true);
+    try {
+      const s = await statusApi.update(password, {
+        enabled,
+        ...(botToken.length > 0 ? { botToken } : {}),
+        ...(chatId.length > 0 ? { chatId } : {}),
+        intervalHours,
+      });
+      setStatus(s);
+      setBotToken("");
+      toast.success("Auto-backup settings saved.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Saving auto-backup failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sendNow = async () => {
+    if (password.length === 0) {
+      toast.error("Enter your console password first (the field at the top).");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await statusApi.runNow(password);
+      if (result.sent) toast.success("Backup sent to Telegram.");
+      else if (result.error) toast.error(result.error);
+      else toast.error("Nothing was sent — check that auto-backup is enabled and a bot token/chat id are set.");
+      await refresh();
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Sending the backup failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div style={{ borderTop: "1px solid var(--inner-border)", paddingTop: "14px", marginTop: "4px" }}>
+      <Stack gap="10px">
+        <div>
+          <strong>Telegram auto-backup</strong>
+          <p style={{ fontSize: "11px", color: "var(--text-tertiary)", margin: "4px 0 0" }}>
+            Periodically sends this tenant&apos;s native backup to your Telegram chat via a bot —
+            same idea as 9Router&apos;s auto-backup. Scheduler checks hourly; interval gates actual sends.
+          </p>
+        </div>
+        <label style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px" }}>
+          <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+          <span>Enabled</span>
+        </label>
+        <Input
+          label="Bot token (@BotFather)"
+          type="password"
+          value={botToken}
+          placeholder={status?.botTokenMasked ?? "123456:ABC-DEF…"}
+          onChange={(event) => setBotToken(event.target.value)}
+          autoComplete="off"
+        />
+        <Input
+          label="Chat ID"
+          value={chatId}
+          placeholder={status?.chatId ?? "e.g. 6863051027 or @channel"}
+          onChange={(event) => setChatId(event.target.value)}
+          autoComplete="off"
+        />
+        <Input
+          label="Interval (hours)"
+          type="number"
+          value={String(intervalHours)}
+          onChange={(event) => setIntervalHours(Math.max(1, Number(event.target.value) || 24))}
+        />
+        {status !== null ? (
+          <p style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
+            Last sent: {status.lastSentAt ?? "never"}
+            {status.lastError ? <> · last error: <span style={{ color: "var(--red)" }}>{status.lastError}</span></> : null}
+          </p>
+        ) : null}
+        <Inline justify="flex-start">
+          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
+            Save auto-backup
+          </Button>
+          <Button variant="secondary" size="sm" onClick={sendNow} disabled={busy || password.length === 0}>
+            Send backup now
+          </Button>
+        </Inline>
+      </Stack>
+    </div>
+  );
+}
+
 export function BackupPanel(): ReactNode {
   const [password, setPassword] = useState("");
   const [includeConfig, setIncludeConfig] = useState(true);
@@ -104,7 +222,7 @@ export function BackupPanel(): ReactNode {
     setConfirmDelete(false);
     toast.success("Selected configuration deleted.", Object.entries(result.deleted).map(([table, count]) => `${table}: ${count}`).join(" · "));
   };
-  const download = () => {
+  const download = (exportFormat: "native" | "9router") => {
     const sections = [
       ...(includeConfig ? ["config"] : []),
       ...(includeTelemetry ? ["telemetry"] : []),
@@ -114,17 +232,14 @@ export function BackupPanel(): ReactNode {
       return;
     }
     exportBackup.mutate(
-      { password, sections },
+      { password, sections, format: exportFormat },
       {
         onSuccess: (payload) => {
           const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-          downloadTextFile(
-            `cartethyia-backup-${stamp}.json`,
-            JSON.stringify(payload, null, 2),
-            "application/json",
-          );
+          const name = exportFormat === "9router" ? `9router-backup-${stamp}.json` : `cartethyia-backup-${stamp}.json`;
+          downloadTextFile(name, JSON.stringify(payload, null, 2), "application/json");
           setPassword("");
-          toast.success("Backup downloaded.");
+          toast.success(exportFormat === "9router" ? "9Router-compatible backup downloaded." : "Backup downloaded.");
         },
         onError: (error) => toast.error(getErrorMessage(error, "Backup export failed.")),
       },
@@ -207,10 +322,19 @@ export function BackupPanel(): ReactNode {
             <Button
               variant="primary"
               size="sm"
-              onClick={download}
+              onClick={() => download("native")}
               disabled={exportBackup.isPending || password.length === 0}
             >
               <Download size={14} /> {exportBackup.isPending ? "Exporting…" : "Download backup"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => download("9router")}
+              disabled={exportBackup.isPending || password.length === 0}
+              title="Export in the 9Router database format, importable by a 9Router instance"
+            >
+              <Download size={14} /> Download for 9Router
             </Button>
             <Button
               variant="secondary"
@@ -261,6 +385,8 @@ export function BackupPanel(): ReactNode {
           ) : null}
 
           {report !== null ? <ImportReportPanel report={report} /> : null}
+
+          <AutoBackupSection password={password} />
 
           <div style={{ borderTop: "1px solid var(--inner-border)", paddingTop: "14px", marginTop: "4px" }}>
             <Stack gap="10px">

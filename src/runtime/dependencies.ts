@@ -368,6 +368,10 @@ export async function buildProductionDeps(): Promise<ProductionDeps> {
         }),
     });
   }
+  // Scheduled native backup over Telegram (`console_settings.preferences.autoBackup`).
+  // Disabled until the operator configures it; the worker no-ops when no tenant has it on.
+  const { registerAutoBackupTask } = await import("../workers/auto-backup");
+  registerAutoBackupTask({ db, scheduledTasks });
   // The scheduled tasks are registered here but started by the caller once the
   // listener is actually serving (`main.ts`). Starting them inside this builder
   // would let the first tick — the lease sweep, the health sweep — run against
