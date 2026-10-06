@@ -8,7 +8,7 @@ import type { RequiredCapability } from "../translation/capabilities";
 import { isModelAllowed, type ResolvedApiKey } from "../../security/api-key-auth";
 import { allowsCliToolMappings } from "../../security/cli-client-fingerprint";
 import { dropIncompleteToolRounds, repairRequestToolCalls } from "../translation/tool-repair";
-import { sanitizeRequestToolIds } from "../translation/tool-id";
+import { sanitizeRequestToolIds, dedupeRequestToolIds } from "../translation/tool-id";
 import { parseThinkingSuffix, withThinkingSuffixIntent } from "../translation/thinking";
 import { nativeServicePathFor } from "../dispatch/native-services";
 import { log } from "../../observability/logger";
@@ -606,6 +606,12 @@ export class ProxyRequestPreparer {
           })
         : repairRequestToolCalls(variantRequest);
       effectiveRequest = sanitizeRequestToolIds(effectiveRequest);
+      // Clients replay history verbatim and can reuse one `call_...` id across
+      // turns. Gemini encodes each occurrence as a `functionCall` part, so a
+      // repeated id reaches the upstream as a duplicate and is rejected with a
+      // detail-free HTTP 400 INVALID_ARGUMENT. Runs after sanitize so the
+      // positional replacement ids are themselves already pattern-valid.
+      effectiveRequest = dedupeRequestToolIds(effectiveRequest);
     }
     if (signal?.aborted)
       throw new GatewayError("transport_closed", 499, "request was cancelled");

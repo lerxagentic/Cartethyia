@@ -264,7 +264,16 @@ export function buildGeminiPayload(request: CanonicalRequest): Record<string, un
     });
   const payload: Record<string, unknown> = { contents };
   if (systemParts.length > 0) payload["systemInstruction"] = { role: "user", parts: systemParts };
-  const functionTools = (request.tools ?? []).filter((t) => t.name);
+  // Only real function tools become `functionDeclarations`. A hosted/built-in
+  // tool (web_search, code_execution, …) carries a `tool_type` and no JSON
+  // schema — emitting it here produced a declaration whose `parameters.type`
+  // was the tool's own type string, which Gemini rejects with
+  // "Invalid value at 'request.tools[0].function_declarations[0].parameters.type'".
+  // Built-ins are expressed on this wire as their own Tool members (e.g.
+  // `googleSearch`), which the provider adapter adds.
+  const functionTools = (request.tools ?? []).filter(
+    (tool) => tool.name && (tool.tool_type === undefined || tool.tool_type === "function"),
+  );
   if (functionTools.length > 0) {
     payload["tools"] = [
       {

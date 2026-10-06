@@ -91,3 +91,78 @@ export function sanitizeRequestToolIds(request: CanonicalRequest): CanonicalRequ
 
   return changed ? { ...request, messages } : request;
 }
+
+/**
+ * Fresh id for a repeated call occurrence. Deterministic (position-derived, no
+ * clock/random) so identical histories still produce byte-identical requests,
+ * and built only from `[a-zA-Z0-9_]` so it satisfies `TOOL_ID_PATTERN`.
+ */
+function uniqueToolCallId(
+  base: string,
+  msgIndex: number,
+  partIndex: number,
+  taken: Set<string>,
+): string {
+  const stem = `${sanitizeToolId(base) ?? "call"}_d${msgIndex}_${partIndex}`;
+  let candidate = stem;
+  let suffix = 1;
+  while (taken.has(candidate)) candidate = `${stem}_${suffix++}`;
+  taken.add(candidate);
+  return candidate;
+}
+
+/**
+ * Makes every tool-call id unique within a request while keeping each call
+ * paired with its result.
+ *
+ * Clients replay history verbatim and can reuse one `call_...` across turns;
+ * Gemini's `contents` then carries two `functionCall` parts with the same id
+ * (and two matching `functionResponse` parts), which the upstream rejects with
+ * a detail-free HTTP 400 INVALID_ARGUMENT. The first occurrence keeps its id —
+ * that is the id the client's own history refers to — and every later
+ * occurrence is renamed.
+ *
+ * Results are re-pointed through a FIFO queue per original id rather than by
+ * matching on id alone: results answer calls positionally in call order, so
+ * consuming the queue in encounter order lands each result on the occurrence it
+ * actually followed. Returns the same reference when no id repeats.
+ */
+export function dedupeRequestToolIds(request: CanonicalRequest): CanonicalRequest {
+  const taken = new Set<string>();
+  const expected = new Map<string, string[]>();
+  let changed = false;
+
+  const messages = request.messages.map((message, msgIndex) => {
+    let messageChanged = false;
+    const content = message.content.map((part, partIndex) => {
+      if (part.kind === "toolCall") {
+        const original = part.call_id;
+        let effective = original;
+        if (taken.has(original)) {
+          effective = uniqueToolCallId(original, msgIndex, partIndex, taken);
+        } else {
+          taken.add(original);
+        }
+        const queue = expected.get(original) ?? [];
+        queue.push(effective);
+        expected.set(original, queue);
+        if (effective === original) return part;
+        changed = true;
+        messageChanged = true;
+        return { ...part, call_id: effective };
+      }
+      if (part.kind === "toolResult") {
+        const effective = expected.get(part.call_id)?.shift();
+        if (effective === undefined || effective === part.call_id) return part;
+        changed = true;
+        messageChanged = true;
+        return { ...part, call_id: effective };
+      }
+      return part;
+    });
+    if (!messageChanged) return message;
+    return { ...message, content };
+  });
+
+  return changed ? { ...request, messages } : request;
+}

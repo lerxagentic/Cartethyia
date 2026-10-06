@@ -664,12 +664,47 @@ function buildAntigravityEnvelope(
       ? { generationConfig }
       : {}),
   };
-  if ((request.tools ?? []).some((tool) => tool.name === "web_search" || tool.name === "web_search_preview")) {
+  // A hosted web-search tool (the caller asked the *provider* to search) is
+  // expressed on the Gemini wire as the built-in `googleSearch`. A plain
+  // *function* tool that merely happens to be named `web_search` is NOT that:
+  // the client declared a function it executes itself, and OpenAI-compatible
+  // agents — Hermes among them — always do. Rewriting it into `googleSearch`
+  // turned the request into a built-in + function combination, which Cloud Code
+  // Assist rejects with the misleading
+  // "Please enable tool_config.include_server_side_tool_invocations…" message.
+  // The discriminator is the canonical `tool_type`, never the name.
+  const hostedSearch = (request.tools ?? []).some((tool) => tool.tool_type === "web_search");
+  if (hostedSearch) {
     const tools = Array.isArray(requestPayload["tools"])
       ? [...(requestPayload["tools"] as Record<string, unknown>[])]
       : [];
-    tools.push({ googleSearch: {} });
+    // Google's wire shape carries the built-in and the function declarations in
+    // ONE `Tool` object (`Tool{ google_search, function_declarations }`). Pushed
+    // as two separate entries they are not recognized as a combination at all,
+    // which is the other half of why the flag alone did not help: there was no
+    // valid pair for it to authorize. Merge into the first group when one
+    // exists, otherwise add a standalone built-in entry.
+    const groupIndex = tools.findIndex(
+      (group) => isRecord(group) && Array.isArray(group["functionDeclarations"]),
+    );
+    if (groupIndex >= 0) {
+      tools[groupIndex] = { ...(tools[groupIndex] as Record<string, unknown>), googleSearch: {} };
+    } else {
+      tools.push({ googleSearch: {} });
+    }
     requestPayload["tools"] = tools;
+    // The flag authorizes built-in + custom tool combination. Set only when a
+    // function group is actually present: the built-in alone is accepted
+    // without it, and adding it there would change a payload that already works.
+    if (groupIndex >= 0) {
+      const existingToolConfig = isRecord(requestPayload["toolConfig"])
+        ? (requestPayload["toolConfig"] as Record<string, unknown>)
+        : {};
+      requestPayload["toolConfig"] = {
+        ...existingToolConfig,
+        includeServerSideToolInvocations: true,
+      };
+    }
   }
   if (logicalModelId.includes("claude") && !isRecord(requestPayload["toolConfig"])) {
     requestPayload["toolConfig"] = { functionCallingConfig: { mode: "VALIDATED" } };
