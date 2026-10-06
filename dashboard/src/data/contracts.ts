@@ -139,6 +139,13 @@ export type {
   StudioSessionSummary,
 } from "../../../src/console/domains/studio/contracts";
 
+export type { PersonaView } from "../../../src/console/domains/personas/contracts";
+
+export type {
+  BenchmarkRankingEntry,
+  BenchmarkRecentEntry,
+} from "../../../src/console/domains/benchmark/store";
+
 export type {
   RuntimeSettingsResponse,
   UpdateRuntimeSettingsRequest,

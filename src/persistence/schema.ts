@@ -811,6 +811,13 @@ export interface ConsoleSettingsPreferences {
   privacyMode?: "masked" | "full";
   webSearchOrder?: readonly string[];
   /**
+   * Custom persona applied to every request from this tenant. When set, the
+   * named persona's text REPLACES the client's system prompt — the router, not
+   * the caller, decides the model's instructions. Absent/unknown id means no
+   * persona is applied and the client's own system content is left alone.
+   */
+  activePersonaId?: string | null;
+  /**
    * Scheduled native backup delivered to a Telegram chat (mirrors 9Router's
    * auto-backup). `lastSentAt`/`lastError` are scheduler state, persisted so
    * a restart never re-sends a backup that already went out.
@@ -1049,4 +1056,47 @@ export const studioSessions = pgTable(
     ...timestampColumns(),
   },
   (table) => [index("studio_sessions_tenant_updated_idx").on(table.tenantId, table.updatedAt)],
+);
+
+// Custom Personas: operator-authored system prompts that replace whatever
+// system content the client sent. One row per saved persona; the *active* one
+// is named by `ConsoleSettingsPreferences.activePersonaId` rather than a flag
+// here, so activation is a single settings write and reads flow through the
+// already-cached preferences path on the hot request path.
+export const personas = pgTable(
+  "personas",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantRefRequired(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    content: text("content").notNull(),
+    ...timestampColumns(),
+  },
+  (table) => [index("personas_tenant_updated_idx").on(table.tenantId, table.updatedAt)],
+);
+
+export type Persona = typeof personas.$inferSelect;
+
+// Model benchmarks: latency/throughput samples per model over time.
+//
+// Ranking is computed from this table rather than from a single live probe: a
+// benchmark that measured one prompt would rank by noise. Keeping the raw runs
+// makes the ranking explainable ("fastest median over the last N runs") and
+// lets a later run dilute one unlucky slow sample.
+export const modelBenchmarks = pgTable(
+  "model_benchmarks",
+  {
+    id: text("id").primaryKey(),
+    tenantId: tenantRefRequired(),
+    model: text("model").notNull(),
+    provider: text("provider"),
+    ok: boolean("ok").notNull(),
+    latencyMs: integer("latency_ms"),
+    ttftMs: integer("ttft_ms"),
+    outputTokens: integer("output_tokens"),
+    error: text("error"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("model_benchmarks_tenant_model_at_idx").on(table.tenantId, table.model, table.at)],
 );

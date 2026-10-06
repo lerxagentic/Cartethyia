@@ -22,6 +22,8 @@ import {
   Terminal,
   Timer,
   FileText,
+  UserRound,
+  Gauge,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -62,6 +64,8 @@ export const navigationGroups: readonly NavGroupDef[] = [
       { label: "Image Lab", path: "/image-lab", icon: ImageIcon },
       { label: "Compare Models", path: "/arena", icon: Swords },
       { label: "PRD Builder", path: "/prd-builder", icon: FileText },
+      { label: "Personas", path: "/personas", icon: UserRound },
+      { label: "Benchmark", path: "/benchmark", icon: Gauge },
       { label: "Usage", path: "/usage", icon: Activity },
       { label: "Providers", path: "/providers", icon: Server },
     ],
@@ -111,6 +115,14 @@ const titlesMap: Record<string, { title: string; sub: string }> = {
   "/prd-builder": {
     title: "PRD Builder",
     sub: "One-pass structured Product Requirements Document generator",
+  },
+  "/personas": {
+    title: "Custom Personas",
+    sub: "Router-wide system prompts that replace the caller's own",
+  },
+  "/benchmark": {
+    title: "Model Benchmark",
+    sub: "Latency and throughput ranking measured through this router",
   },
   "/cli-tools": {
     title: "CLI Tools",

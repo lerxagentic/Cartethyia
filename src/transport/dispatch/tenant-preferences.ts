@@ -12,6 +12,8 @@ import type { CanonicalRequest } from "../canonical-model";
 import type { PreparedProxyRequest } from "../request/preparer";
 import { normalizeThinkingConfig } from "../translation/thinking";
 import { compressRequest } from "../request/rtk/compress-request";
+import { applyPersona } from "../request/persona";
+import { activePersonaReaderFor } from "../../console/domains/personas/resolver";
 import { preferencesReaderFor } from "./attempt-finalize";
 
 /**
@@ -63,6 +65,20 @@ export async function applyTenantPreferences(
           ponyTail: prefs.ponyTailEnabled === true ? prefs.ponyTailLevel : null,
         });
         canonicalRequest = request;
+      }
+      // An active persona is the router's authoritative instruction: it
+      // REPLACES the client's system content, and it is applied last so it is
+      // also the final word over any directive shaping above (a persona and
+      // PonyTail both on must not silently concatenate into a prompt the
+      // operator did not write). Resolution failure is non-fatal — the
+      // caller's own prompt then stands, exactly as before this feature.
+      const personaText = await activePersonaReaderFor(db).read(
+        tenantId,
+        prefs.activePersonaId ?? null,
+      );
+      if (personaText !== null) {
+        const next = applyPersona(canonicalRequest, personaText);
+        if (next !== canonicalRequest) canonicalRequest = next;
       }
     }
   } catch {

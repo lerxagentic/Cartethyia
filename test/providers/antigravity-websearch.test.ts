@@ -65,7 +65,7 @@ function requestWith(tools: CanonicalRequest["tools"]): CanonicalRequest {
   return {
     model: "gemini-3.8-flash",
     messages: [{ role: "user", content: [{ kind: "text", text: "hi" }] }],
-    tools,
+    ...(tools === undefined ? {} : { tools }),
     generation_controls: {},
     stream: false,
     source_surface: "chat",

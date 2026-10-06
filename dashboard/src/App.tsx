@@ -54,6 +54,8 @@ const Studio = lazyWithRetry(() => import("./routes/Studio"), "studio");
 const ImageLab = lazyWithRetry(() => import("./routes/ImageLab"), "image-lab");
 const Arena = lazyWithRetry(() => import("./routes/Arena"), "arena");
 const PrdBuilder = lazyWithRetry(() => import("./routes/PrdBuilder"), "prd-builder");
+const Personas = lazyWithRetry(() => import("./routes/Personas"), "personas");
+const Benchmark = lazyWithRetry(() => import("./routes/Benchmark"), "benchmark");
 
 /**
  * Forwards shell-wide session transitions into router navigation. A 401 means
@@ -188,6 +190,8 @@ function ProtectedRoutes(): ReactNode {
           <Route path="/image-lab" element={<ImageLab />} />
           <Route path="/arena" element={<Arena />} />
           <Route path="/prd-builder" element={<PrdBuilder />} />
+          <Route path="/personas" element={<Personas />} />
+          <Route path="/benchmark" element={<Benchmark />} />
           <Route path="/cli-tools" element={<CliTools />} />
           <Route path="/cli-tools/:toolId" element={<CliToolDetail />} />
           <Route path="/settings" element={<Settings />} />

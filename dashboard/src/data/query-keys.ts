@@ -82,4 +82,10 @@ export const queryKeys = {
     sessions: ["console", "studio", "sessions"] as const,
     session: (sessionId: string) => ["console", "studio", "sessions", sessionId] as const,
   },
+  personas: {
+    all: ["console", "personas"] as const,
+  },
+  benchmark: {
+    all: ["console", "benchmark"] as const,
+  },
 } as const;

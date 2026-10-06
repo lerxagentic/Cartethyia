@@ -33,6 +33,12 @@ import { createModelAbuseRoutes } from "./domains/model-abuse/contracts";
 import { DrizzleAuditReadStore } from "./domains/audit/store";
 import { createStudioRoutes } from "./domains/studio/routes";
 import { DrizzleStudioSessionStore } from "./domains/studio/store";
+import { createPersonaRoutes } from "./domains/personas/contracts";
+import { DrizzlePersonaStore } from "./domains/personas/store";
+import { DrizzleActivePersona } from "./domains/personas/active-persona";
+import { createBenchmarkRoutes } from "./domains/benchmark/contracts";
+import { DrizzleBenchmarkStore } from "./domains/benchmark/store";
+import { createBenchmarkProbe } from "./domains/benchmark/probe";
 import { createPerformanceRoutes } from "./observability/performance";
 import { createBackupRoutes } from "./backup/routes";
 import { BackupService } from "./backup/service";
@@ -222,6 +228,16 @@ export function registerConsoleDomains(
     accessResolver: ctx.accessResolver,
     webFetch: (tenantId) => ctx.networkBindingFactory.fetch(undefined, tenantId),
     auditSink: ctx.auditRecorder,
+  }));
+  console.use(createPersonaRoutes({
+    store: new DrizzlePersonaStore(ctx.db),
+    accessResolver: ctx.accessResolver,
+    activePersona: new DrizzleActivePersona(ctx.db),
+  }));
+  console.use(createBenchmarkRoutes({
+    store: new DrizzleBenchmarkStore(ctx.db),
+    accessResolver: ctx.accessResolver,
+    probeFor: createBenchmarkProbe({ keyStore: apiKeyStore }),
   }));
   console.use(createLogRoutes({ accessResolver: ctx.accessResolver, auditSink: ctx.auditRecorder }));
   console.use(createPerformanceRoutes({ accessResolver: ctx.accessResolver }));

@@ -493,3 +493,30 @@ CREATE INDEX "idx_share_links_api_key" ON "share_links" USING btree ("api_key_id
 --> statement-breakpoint
 CREATE INDEX "idx_share_links_active" ON "share_links" USING btree ("active", "kind", "expires_at");
 --> statement-breakpoint
+CREATE TABLE "personas" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL REFERENCES "tenants"("id") ON DELETE CASCADE,
+  "name" text NOT NULL,
+  "description" text NOT NULL DEFAULT '',
+  "content" text NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT NOW(),
+  "updated_at" timestamptz NOT NULL DEFAULT NOW()
+);
+--> statement-breakpoint
+CREATE INDEX "personas_tenant_updated_idx" ON "personas" ("tenant_id", "updated_at");
+--> statement-breakpoint
+CREATE TABLE "model_benchmarks" (
+  "id" text PRIMARY KEY,
+  "tenant_id" uuid NOT NULL REFERENCES "tenants"("id") ON DELETE CASCADE,
+  "model" text NOT NULL,
+  "provider" text,
+  "ok" boolean NOT NULL,
+  "latency_ms" integer,
+  "ttft_ms" integer,
+  "output_tokens" integer,
+  "error" text,
+  "at" timestamptz NOT NULL DEFAULT NOW()
+);
+--> statement-breakpoint
+CREATE INDEX "model_benchmarks_tenant_model_at_idx" ON "model_benchmarks" ("tenant_id", "model", "at");
+--> statement-breakpoint
