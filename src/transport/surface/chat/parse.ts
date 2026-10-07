@@ -286,6 +286,8 @@ export function parseGenerationControls(body: JsonObject): GenerationControls {
   // wants the gateway to omit encrypted reasoning artifacts before dispatch.
   if (typeof body.omit_encrypted_reasoning === "boolean")
     addExtension(controls, "extension:omit_encrypted_reasoning", body.omit_encrypted_reasoning);
+  if (typeof body.bypass_persona === "boolean")
+    addExtension(controls, "extension:bypass_persona", body.bypass_persona);
   if (typeof body.parallel_tool_calls === "boolean")
     controls.parallel_tool_calls = body.parallel_tool_calls;
   if (typeof body.service_tier === "string") controls.service_tier = body.service_tier;

@@ -72,13 +72,17 @@ export async function applyTenantPreferences(
       // PonyTail both on must not silently concatenate into a prompt the
       // operator did not write). Resolution failure is non-fatal — the
       // caller's own prompt then stands, exactly as before this feature.
-      const personaText = await activePersonaReaderFor(db).read(
-        tenantId,
-        prefs.activePersonaId ?? null,
-      );
-      if (personaText !== null) {
-        const next = applyPersona(canonicalRequest, personaText);
-        if (next !== canonicalRequest) canonicalRequest = next;
+      const bypassPersona =
+        canonicalRequest.generation_controls["extension:bypass_persona"] === true;
+      if (!bypassPersona) {
+        const personaText = await activePersonaReaderFor(db).read(
+          tenantId,
+          prefs.activePersonaId ?? null,
+        );
+        if (personaText !== null) {
+          const next = applyPersona(canonicalRequest, personaText);
+          if (next !== canonicalRequest) canonicalRequest = next;
+        }
       }
     }
   } catch {

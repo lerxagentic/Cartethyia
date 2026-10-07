@@ -75,13 +75,20 @@ async function measureStream(response: Response, startedAt: number): Promise<Ben
       }
       const choices = parsed["choices"];
       if (Array.isArray(choices) && choices.length > 0) {
-        const delta = (choices[0] as Record<string, unknown>)["delta"];
-        const hasText =
-          typeof delta === "object" &&
-          delta !== null &&
-          typeof (delta as Record<string, unknown>)["content"] === "string" &&
-          ((delta as Record<string, unknown>)["content"] as string).length > 0;
-        if (hasText && firstTokenAt === null) firstTokenAt = Date.now();
+        const rawDelta = (choices[0] as Record<string, unknown>)["delta"];
+        if (typeof rawDelta === "object" && rawDelta !== null) {
+          const delta = rawDelta as Record<string, unknown>;
+          const content = typeof delta["content"] === "string" ? delta["content"] : "";
+          const reasoning =
+            typeof delta["reasoning_content"] === "string"
+              ? delta["reasoning_content"]
+              : typeof delta["reasoning"] === "string"
+                ? delta["reasoning"]
+                : "";
+          if ((content.length > 0 || reasoning.length > 0) && firstTokenAt === null) {
+            firstTokenAt = Date.now();
+          }
+        }
       }
       const usage = parsed["usage"];
       if (typeof usage === "object" && usage !== null) {
@@ -126,6 +133,7 @@ export function createBenchmarkProbe(deps: BenchmarkProbeDeps) {
             stream: true,
             max_tokens: BENCHMARK_MAX_TOKENS,
             stream_options: { include_usage: true },
+            bypass_persona: true,
           }),
         });
       } catch (error) {
