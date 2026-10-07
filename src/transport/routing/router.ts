@@ -598,7 +598,6 @@ export class RoutingEngine {
       throw accountsUnavailableError(
         requestedModel,
         decisions.map((d) => d.reason),
-        resolved.model,
       );
     }
     // Every eligible candidate is account-wide cooling: no healthy account is
