@@ -515,15 +515,52 @@ export function finalizeBuddyMessages(
  * canonical repair (`repairRequestToolCalls`, request/preparer) owns it for
  * every route, so this stays a system-prompt and content-shape hook.
  */
+/**
+ * The router's own persona text from a canonical request, or null.
+ *
+ * Only text the router injected counts (`persona_injected`): the buddy variants
+ * discard CALLER system turns by contract, and that must keep happening — the
+ * leading system turn is what the upstream validates as the calling channel.
+ * A router-owned persona is different: it is this deployment's instruction, and
+ * the upstream accepts it as a following system turn (verified live, no 11128).
+ */
+export function personaTextOf(request: CanonicalRequest): string | null {
+  if (request.persona_injected !== true) return null;
+  const parts = [...(request.system ?? []), ...(request.instructions ?? [])];
+  const text = parts
+    .filter((part): part is { kind: "text"; text: string } => part.kind === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+  return text.length > 0 ? text : null;
+}
+
 export function applyBuddySystemPrompt(
   messages: Array<Record<string, unknown>>,
   systemPrompt: string,
+  /**
+   * Router-owned instruction (an active persona) to carry in place of the fixed
+   * leading prompt. When present it takes the leading system slot, which is the
+   * "replace the system prompt" semantic the persona feature promises.
+   *
+   * Verified against the live upstream across every active `cb` account: a
+   * custom leading system turn is accepted (HTTP 200, no 11128), and the model
+   * follows it cleanly. The alternative — fixed prompt leading, persona second —
+   * also returns 200 but leaves the fixed prompt's "be honest, state what you
+   * know" clause in competition with the persona, and the model argues with it
+   * instead of obeying ("I'm Claude… I know the instructions set up a
+   * character"), which is a persona that silently does not take effect.
+   */
+  personaText?: string | null,
 ): void {
   const source = messages.filter(
     (message) => message["role"] !== "system" && message["role"] !== "developer",
   );
   messages.length = 0;
-  messages.push({ role: "system", content: systemPrompt });
+  // A persona REPLACES the channel prompt; the caller's own system turns are
+  // still dropped, which is this variant's contract.
+  const persona = typeof personaText === "string" ? personaText.trim() : "";
+  messages.push({ role: "system", content: persona.length > 0 ? persona : systemPrompt });
   for (const message of source) {
     if (message["role"] === "user" && typeof message["content"] === "string") {
       messages.push({
@@ -534,5 +571,5 @@ export function applyBuddySystemPrompt(
       messages.push({ ...message });
     }
   }
-  finalizeBuddyMessages(messages, systemPrompt);
+  finalizeBuddyMessages(messages, persona.length > 0 ? persona : systemPrompt);
 }

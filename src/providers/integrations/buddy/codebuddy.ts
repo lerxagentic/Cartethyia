@@ -21,6 +21,7 @@ import {
   applyBuddySystemPrompt,
   buddyPrePayloadCommon,
   normalizeBuddyToolNames,
+  personaTextOf,
 } from "./buddy-chat-shared";
 
 
@@ -71,7 +72,11 @@ function codeBuddyIntlPrePayload(
   if (!source) throw new GatewayError("invalid_request", 400, "CodeBuddy model is required");
   const messages = payload["messages"];
   if (Array.isArray(messages)) {
-    applyBuddySystemPrompt(messages as Array<Record<string, unknown>>, CODEBUDDY_SYSTEM_PROMPT);
+    applyBuddySystemPrompt(
+      messages as Array<Record<string, unknown>>,
+      CODEBUDDY_SYSTEM_PROMPT,
+      personaTextOf(request),
+    );
   }
   normalizeBuddyToolNames(payload);
   void request;

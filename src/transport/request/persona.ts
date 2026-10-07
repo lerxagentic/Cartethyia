@@ -43,5 +43,9 @@ export function applyPersona(request: CanonicalRequest, personaText: string): Ca
     // The Responses surface carries its system text here; dropping it is part
     // of "replace", not an oversight.
     instructions: [],
+    // Marks this text as the router's own instruction. Adapters that must keep
+    // a fixed leading system turn for their channel (the buddy family) use this
+    // to carry the persona instead of discarding it as caller context.
+    persona_injected: true,
   };
 }

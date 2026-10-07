@@ -471,6 +471,13 @@ export interface CanonicalRequest {
   model: string;
   /** Canonical system content normalized by a surface adapter. */
   system?: readonly ContentPart[];
+  /**
+   * True when `system` is the router's own persona rather than the caller's
+   * prompt. Provider adapters that must reserve their leading system turn for a
+   * fixed channel prompt (the buddy family) read this to know that the text in
+   * `system` is an instruction to honor, not caller context to discard.
+   */
+  persona_injected?: boolean;
   /** Canonical instructions content normalized by a surface adapter. */
   instructions?: readonly ContentPart[];
   messages: readonly CanonicalMessage[];

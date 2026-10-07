@@ -24,6 +24,7 @@ import {
   applyBuddySystemPrompt,
   buddyPrePayloadCommon,
   normalizeBuddyToolNames,
+  personaTextOf,
 } from "./buddy-chat-shared";
 
 // Constants — public contract
@@ -117,7 +118,7 @@ export function workbuddyPrePayload(
   const messages = payload["messages"];
   if (Array.isArray(messages)) {
     const normalizedMessages = messages as Array<Record<string, unknown>>;
-    applyBuddySystemPrompt(normalizedMessages, WORKBUDDY_SYSTEM_PROMPT);
+    applyBuddySystemPrompt(normalizedMessages, WORKBUDDY_SYSTEM_PROMPT, personaTextOf(request));
     restoreHistoricalToolDefinitions(payload, normalizedMessages);
   }
   normalizeBuddyToolNames(payload);
