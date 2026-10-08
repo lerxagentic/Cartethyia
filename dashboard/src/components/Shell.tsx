@@ -60,14 +60,19 @@ export const navigationGroups: readonly NavGroupDef[] = [
     label: "Main",
     items: [
       { label: "Overview", path: "/", icon: LayoutDashboard },
+      { label: "Usage", path: "/usage", icon: Activity },
+      { label: "Providers", path: "/providers", icon: Server },
+    ],
+  },
+  {
+    label: "Features +",
+    items: [
       { label: "Model Lab", path: "/model-lab", icon: FlaskConical },
       { label: "Image Lab", path: "/image-lab", icon: ImageIcon },
       { label: "Compare Models", path: "/arena", icon: Swords },
       { label: "PRD Builder", path: "/prd-builder", icon: FileText },
       { label: "Personas", path: "/personas", icon: UserRound },
       { label: "Benchmark", path: "/benchmark", icon: Gauge },
-      { label: "Usage", path: "/usage", icon: Activity },
-      { label: "Providers", path: "/providers", icon: Server },
     ],
   },
   {
