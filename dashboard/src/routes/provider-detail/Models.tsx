@@ -32,6 +32,7 @@ import {
 } from "../../hooks/providers";
 import { formatModelTokens, UNKNOWN_LIMITS_TOOLTIP } from "../../shared/model-limits";
 import { modelFreeBadge, type FreeAccess } from "../../shared/quota-formatters";
+import type { QuotaWindow } from "../../hooks/quota";
 import { toast } from "../../shared/toast";
 import { useTrackedTimeout } from "../../hooks/use-timeout";
 import { PROBE_REASONING_EFFORTS, formatThinkingSuffix, type ModelCatalogEntry, type ProbeReasoningEffort } from "../../data/contracts";
@@ -393,6 +394,7 @@ function ModelCard({
   onDeleteRequest,
   deletePending,
   freeAccess,
+  quotaWindows,
 }: {
   readonly providerId: string;
   readonly model: ModelCatalogEntry;
@@ -403,6 +405,7 @@ function ModelCard({
   readonly onDeleteRequest: (model: ModelCatalogEntry) => void;
   readonly deletePending: boolean;
   readonly freeAccess: FreeAccess | null;
+  readonly quotaWindows?: readonly QuotaWindow[] | null;
 }): ReactNode {
   const probe = useProbeModel();
   const setEnabled = useSetModelEnabled();
@@ -580,7 +583,7 @@ function ModelCard({
                 // Free-tier badge per-model. Shows only for models that do not
                 // deduct credits (e.g. deepseek-v4.1-flash, hy3), paired with
                 // the real quota window expiry.
-                const badge = modelFreeBadge(providerId, model.modelId, freeAccess);
+                const badge = modelFreeBadge(providerId, model.modelId, freeAccess, quotaWindows);
                 if (badge === null) return null;
                 const exhausted = freeAccess?.exhausted === true;
                 return (
@@ -800,6 +803,7 @@ export function ModelGrid({
   models,
   thinkingEffort,
   freeAccess,
+  quotaWindows,
 }: {
   readonly providerId: string;
   readonly models: readonly ModelCatalogEntry[];
@@ -808,6 +812,7 @@ export function ModelGrid({
    *  a free-plan provider inherits the badge: the plan is a property of the
    *  account, not of an individual model. */
   readonly freeAccess?: FreeAccess | null;
+  readonly quotaWindows?: readonly QuotaWindow[] | null;
 }): ReactNode {
   const deleteModel = useDeleteProviderModel();
   const [deleteTarget, setDeleteTarget] = useState<ModelCatalogEntry | null>(null);
@@ -830,6 +835,7 @@ export function ModelGrid({
       deletePending={deleteModel.isPending}
       onDeleteRequest={setDeleteTarget}
       freeAccess={freeAccess ?? null}
+      quotaWindows={quotaWindows}
     />
   );
   return (

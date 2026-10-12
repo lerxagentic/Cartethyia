@@ -138,13 +138,18 @@ export function modelFreeBadge(
   providerId: string,
   modelId: string,
   access: FreeAccess | null,
+  quotaWindows?: readonly QuotaWindow[] | null,
 ): { label: string; tooltip: string } | null {
   const normProv = providerId.toLowerCase();
   const isBuddy = normProv === "cb" || normProv === "workbuddy" || normProv === "cbcn";
 
   if (isBuddy) {
     if (BUDDY_FREE_MODELS.has(modelId)) {
-      const untilDate = access?.until ? new Date(access.until) : null;
+      // Prioritaskan reset cycle bulanan (misal 31 Okt 2026) jika ada,
+      // fallback ke access.until
+      const monthlyWindow = quotaWindows?.find((w) => w.label.toLowerCase() === "monthly");
+      const targetDateStr = monthlyWindow?.resetsAt ?? access?.until ?? null;
+      const untilDate = targetDateStr ? new Date(targetDateStr) : null;
       const formatted =
         untilDate && Number.isFinite(untilDate.getTime())
           ? untilDate.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })
