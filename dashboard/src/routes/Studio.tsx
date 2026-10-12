@@ -84,8 +84,9 @@ type ThinkLevel = (typeof THINK_LEVELS)[number]["value"];
 
 const SUGGESTIONS = [
   { label: "Test tool calling: use printf to print hello", icon: Wrench },
+  { label: "Search the web for today's AI news and summarize it", icon: Globe },
+  { label: "Use run_javascript to compute the 50th Fibonacci number", icon: Wrench },
   { label: "Think step by step through a tricky logic puzzle", icon: Brain },
-  { label: "Explain how TCP retransmission works, briefly", icon: Globe },
   { label: "Write a haiku about packet loss", icon: Feather },
 ] as const;
 
@@ -855,6 +856,7 @@ export default function ModelLab(): ReactNode {
           call.args,
           controller.signal,
           allowWebTools,
+          key,
         );
         const displayCall = { name: call.name ?? "unknown", args: call.args, result };
         displayCalls.push(displayCall);

@@ -72,12 +72,21 @@ export function inlineScriptBodies(html: string): readonly string[] {
  * the repository's star/fork counts as SVG images. Only `img-src` is widened —
  * `connect-src` stays `'self'`, so the page cannot call a third-party API, and
  * the badge host can never supply a script or a style.
+ *
+ * `worker-src blob:` admits the Model Lab's `run_javascript` sandbox, which is a
+ * Worker built from a Blob URL so no separate asset has to be served. A worker
+ * is a separate global with no DOM and no access to the page's cookies, and the
+ * sandbox itself removes `fetch`/`XMLHttpRequest`/`importScripts` inside it, so
+ * widening this directive does not give model-authored code a way back into the
+ * page or out to the network. `script-src` stays `'self'`; only blob workers
+ * are admitted, not blob scripts.
  */
 export function dashboardContentSecurityPolicy(html: string): string {
   const hashes = inlineScriptBodies(html).map(inlineScriptHash);
   return [
     "default-src 'self'",
     `script-src 'self'${hashes.length > 0 ? ` ${hashes.join(" ")}` : ""}`,
+    "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https: " + BADGE_IMAGE_ORIGIN,
