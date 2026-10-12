@@ -437,29 +437,33 @@ export class ProviderProbingService {
     });
 
     const latencyMs = Date.now() - startedAt;
-    // A native-service probe carries no canonical events: its verdict is the
-    // decision response itself (no dispatch error + answers present), which the
-    // branch above already encoded into `dispatchError`.
-    const { ok, errorMessage, usage } =
-      serviceKind === "systemone"
-        ? {
-            ok: dispatchError === undefined,
-            errorMessage:
-              dispatchError === undefined
-                ? undefined
-                : dispatchError instanceof Error
-                  ? dispatchError.message
-                  : String(dispatchError),
-            usage: undefined,
-          }
-        : computeProbeVerdict({
-            events,
-            dispatchError,
-            providerId,
-            modelId,
-            wireFamily,
-            endpointPath,
-          });
+    // Native services (System One, web search) carry no canonical chat events:
+    // their verdict is the response itself. `computeProbeVerdict` requires a
+    // terminal event from a chat stream, so routing them through it reported
+    // every successful search as a failure — the probe came back "Unknown error"
+    // with no terminal to find. The branch above already encoded the real outcome
+    // into `dispatchError` (a thrown GatewayError on an upstream failure), so
+    // "no dispatch error" is the success condition here.
+    const isNativeService = serviceKind === "systemone" || serviceKind === "websearch";
+    const { ok, errorMessage, usage } = isNativeService
+      ? {
+          ok: dispatchError === undefined,
+          errorMessage:
+            dispatchError === undefined
+              ? undefined
+              : dispatchError instanceof Error
+                ? dispatchError.message
+                : String(dispatchError),
+          usage: undefined,
+        }
+      : computeProbeVerdict({
+          events,
+          dispatchError,
+          providerId,
+          modelId,
+          wireFamily,
+          endpointPath,
+        });
 
     const requestId = crypto.randomUUID();
 
