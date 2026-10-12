@@ -73,7 +73,11 @@ export function makeBuddyModel(
  * output ceilings), so it keeps its own table.
  */
 export const BUDDY_SHARED_RAW: readonly BuddyRawEntry[] = [
-  ["auto", "Auto", true, true, 168_000, null],
+  // `auto` is a router-side alias, not a real model, so upstream publishes no
+  // output ceiling for it. Its context window matches the Claude tier the alias
+  // resolves to; leaving `out` null made the catalog card render
+  // "168k ctx · n/a out" beside rows that all show a number.
+  ["auto", "Auto", true, true, 168_000, 64_000],
   ["primary-model", "Primary", true, true, 272_000, 72_000],
   ["claude-opus-4.6", "Claude Opus 4.6", true, true, 200_000, 64_000],
   ["claude-opus-4.7-1m", "Claude Opus 4.7 1M", true, true, 1_000_000, 64_000],
