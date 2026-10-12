@@ -378,9 +378,42 @@ function QuotaCard({
                   fontWeight: 600,
                   background: "var(--accent-soft)",
                   color: "var(--accent)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
                 }}
+                title={(() => {
+                  const monthly = quota.windows?.find((w) => w.label.toLowerCase() === "monthly");
+                  const resetsAt = monthly?.resetsAt ?? quota.windows?.find((w) => Boolean(w.resetsAt))?.resetsAt;
+                  if (!resetsAt) return `Plan: ${quota.plan}`;
+                  const dt = new Date(resetsAt);
+                  return Number.isFinite(dt.getTime())
+                    ? `Plan: ${quota.plan} · Berlaku/Reset hingga ${dt.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`
+                    : `Plan: ${quota.plan}`;
+                })()}
               >
-                {quota.plan}
+                <span>{quota.plan}</span>
+                {(() => {
+                  const monthly = quota.windows?.find((w) => w.label.toLowerCase() === "monthly");
+                  const resetsAt = monthly?.resetsAt ?? quota.windows?.find((w) => Boolean(w.resetsAt))?.resetsAt;
+                  if (!resetsAt) return null;
+                  const dt = new Date(resetsAt);
+                  if (!Number.isFinite(dt.getTime())) return null;
+                  const formatted = dt.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+                  return (
+                    <span
+                      style={{
+                        fontSize: "9px",
+                        opacity: 0.85,
+                        borderLeft: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
+                        paddingLeft: "4px",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      until {formatted}
+                    </span>
+                  );
+                })()}
               </span>
             )}
             {healthStatus !== "active" ? (
