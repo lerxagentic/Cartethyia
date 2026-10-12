@@ -395,6 +395,7 @@ function ModelCard({
   deletePending,
   freeAccess,
   quotaWindows,
+  batchProbeResult,
 }: {
   readonly providerId: string;
   readonly model: ModelCatalogEntry;
@@ -406,12 +407,14 @@ function ModelCard({
   readonly deletePending: boolean;
   readonly freeAccess: FreeAccess | null;
   readonly quotaWindows?: readonly QuotaWindow[] | null;
+  readonly batchProbeResult?: { ok: boolean; latencyMs: number } | null;
 }): ReactNode {
   const probe = useProbeModel();
   const setEnabled = useSetModelEnabled();
   const [copied, setCopied] = useState(false);
-  const [probeResult, setProbeResult] = useState<{ ok: boolean; latencyMs: number } | null>(null);
+  const [localProbeResult, setLocalProbeResult] = useState<{ ok: boolean; latencyMs: number } | null>(null);
   const scheduleCopyReset = useTrackedTimeout();
+  const probeResult = localProbeResult ?? batchProbeResult ?? null;
 
   // The routable id for this model under the section's thinking setting. The
   // suffix is what a client writes to ask for that level (`model(high)`), and
@@ -433,7 +436,7 @@ function ModelCard({
       },
       {
         onSuccess: (result) => {
-          setProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
+          setLocalProbeResult({ ok: result.ok, latencyMs: result.latencyMs });
           if (!result.ok) {
             toast.error(`${qualifiedId} probe failed`, result.error ?? "Unknown error");
             return;
@@ -445,7 +448,7 @@ function ModelCard({
           );
         },
         onError: (err) => {
-          setProbeResult({ ok: false, latencyMs: 0 });
+          setLocalProbeResult({ ok: false, latencyMs: 0 });
           toast.error(
             `${qualifiedId} probe failed`,
             (err as { message?: string }).message ?? "Model probe failed",
@@ -804,6 +807,7 @@ export function ModelGrid({
   thinkingEffort,
   freeAccess,
   quotaWindows,
+  batchProbeResults,
 }: {
   readonly providerId: string;
   readonly models: readonly ModelCatalogEntry[];
@@ -813,6 +817,7 @@ export function ModelGrid({
    *  account, not of an individual model. */
   readonly freeAccess?: FreeAccess | null;
   readonly quotaWindows?: readonly QuotaWindow[] | null;
+  readonly batchProbeResults?: ReadonlyMap<string, { ok: boolean; latencyMs: number }> | null;
 }): ReactNode {
   const deleteModel = useDeleteProviderModel();
   const [deleteTarget, setDeleteTarget] = useState<ModelCatalogEntry | null>(null);
@@ -836,6 +841,7 @@ export function ModelGrid({
       onDeleteRequest={setDeleteTarget}
       freeAccess={freeAccess ?? null}
       quotaWindows={quotaWindows}
+      batchProbeResult={batchProbeResults?.get(model.modelId) ?? null}
     />
   );
   return (

@@ -66,6 +66,7 @@ export type {
   ProviderAccountExport,
   ProviderAccountsExportResponse,
   ProbeAllAccountsResult,
+  ProbeAllModelsResult,
   ProbeModelRequest,
   ProbeModelResult,
   ByokConnectionTestRequest,

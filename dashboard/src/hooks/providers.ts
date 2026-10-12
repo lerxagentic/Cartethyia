@@ -1,7 +1,7 @@
 import { consoleRequest } from "../data/api";
 import type { ApiErrorShape } from "../data/api";
 // Console-owned device-poll DTO; token material remains provider-internal.
-import type { AccountHealthEventRecord, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountRequest, CreateProviderRequest, OAuthDevicePollResponse as OAuthDevicePollResult, ProbeAllAccountsResult, ProbeModelRequest, ProbeModelResult, ProviderAccountResponse, ProviderAccountsExportResponse, ProviderResponse, SetModelEnabledRequest, UpdateProviderAccountRequest, UpdateProviderRequest } from "../data/contracts";
+import type { AccountHealthEventRecord, ByokConnectionTestRequest, ByokConnectionTestResult, CreateProviderAccountRequest, CreateProviderRequest, OAuthDevicePollResponse as OAuthDevicePollResult, ProbeAllAccountsResult, ProbeAllModelsResult, ProbeModelRequest, ProbeModelResult, ProviderAccountResponse, ProviderAccountsExportResponse, ProviderResponse, SetModelEnabledRequest, UpdateProviderAccountRequest, UpdateProviderRequest } from "../data/contracts";
 import { queryKeys } from "../data/query-keys";
 import { assertModels, assertProviders, querySignal } from "./common";
 import { DASHBOARD_QUERY_OPTIONS } from "../data/query-policy";
@@ -123,6 +123,21 @@ export function useProbeAllProviderAccounts() {
       ),
     onSettled: async (_result, _error, variables) => {
       await invalidateProviderAccounts(queryClient, variables.providerId);
+    },
+  });
+}
+
+/** Probes all registered models for a provider concurrently. */
+export function useProbeAllProviderModels() {
+  const queryClient = useQueryClient();
+  return useMutation<ProbeAllModelsResult, ApiErrorShape, string>({
+    mutationFn: (providerId) =>
+      consoleRequest<ProbeAllModelsResult>(
+        `/providers/${encodeURIComponent(providerId)}/models/test-models`,
+        { method: "POST" },
+      ),
+    onSettled: async (_result, _error, providerId) => {
+      await invalidateProviderAccounts(queryClient, providerId);
     },
   });
 }

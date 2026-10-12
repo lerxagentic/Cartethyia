@@ -3,7 +3,9 @@ import {
   Cable,
   Download,
   ExternalLink,
+  FlaskConical,
   KeyRound,
+  Loader2,
   LockOpen,
   PackageX,
   Plus,
@@ -26,6 +28,7 @@ import { Inline } from "../components/ui/inline";
 import { Stack } from "../components/ui/stack";
 import {
   useProbeAllProviderAccounts,
+  useProbeAllProviderModels,
   useProviderAccounts,
   useProviderModels,
   useProviders,
@@ -68,6 +71,8 @@ export default function ProviderDetail(): ReactNode {
   const quotaWindows = providerQuota?.windows ?? null;
   const syncModels = useSyncProviderModels();
   const autoSyncModels = useSyncProviderModels({ silent: true });
+  const probeAllModels = useProbeAllProviderModels();
+  const [modelProbeResults, setModelProbeResults] = useState<ReadonlyMap<string, { ok: boolean; latencyMs: number }>>(() => new Map());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const probeAllAccounts = useProbeAllProviderAccounts();
   const updateGlobalProvider = useUpdateGlobalProvider();
@@ -483,6 +488,41 @@ export default function ProviderDetail(): ReactNode {
               <Button
                 variant="secondary"
                 size="sm"
+                icon={
+                  probeAllModels.isPending ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <FlaskConical size={13} />
+                  )
+                }
+                disabled={probeAllModels.isPending || models.length === 0}
+                onClick={() => {
+                  probeAllModels.mutate(id, {
+                    onSuccess: (data) => {
+                      const newMap = new Map<string, { ok: boolean; latencyMs: number }>();
+                      let successCount = 0;
+                      for (const r of data.results) {
+                        newMap.set(r.modelId, { ok: r.ok, latencyMs: r.latencyMs });
+                        if (r.ok) successCount += 1;
+                      }
+                      setModelProbeResults(newMap);
+                      toast.success(
+                        "Test all models finished",
+                        `${successCount}/${data.results.length} model aktif & siap digunakan`,
+                      );
+                    },
+                    onError: (err) => {
+                      toast.error("Failed to test models", err.message || "Unknown error");
+                    },
+                  });
+                }}
+                title="Test semua model secara bersamaan untuk mengecek status aktif & latensi"
+              >
+                {probeAllModels.isPending ? "Testing all..." : "Test all models"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 icon={<Trash2 size={13} className={bulkDeleting ? "animate-spin" : ""} />}
                 disabled={
                   syncModels.isPending ||
@@ -557,6 +597,7 @@ export default function ProviderDetail(): ReactNode {
               thinkingEffort={thinkingEffort}
               freeAccess={freeAccess}
               quotaWindows={quotaWindows}
+              batchProbeResults={modelProbeResults}
             />
           )}
         </CardBody>
