@@ -36,8 +36,11 @@ function exaRequest(params: SearchParams, token: string): SearchRequestInit {
     query: params.query,
     numResults: params.maxResults,
     type: "auto",
-    text: true,
-    highlights: true,
+    // Exa only returns `text`/`highlights` when they are asked for inside
+    // `contents`; the top-level `text: true` this used to send is ignored by the
+    // current API, so every result came back as a bare title + URL with an empty
+    // snippet. The cap keeps a single result from dominating the context.
+    contents: { text: { maxCharacters: 300 }, highlights: true },
   };
   if (includes.length > 0) body.includeDomains = includes;
   if (excludes.length > 0) body.excludeDomains = excludes;

@@ -274,6 +274,10 @@ export class ProviderProbingService {
     let ttfbMs: number | undefined;
     let dispatchError: unknown;
     let networkPoolId: string | undefined;
+    /** Sample text for a native-service probe. A search produces no canonical
+     *  events, so without this the console showed "No sample text in the
+     *  response" even on a fully successful search. */
+    let nativeSample: string | undefined;
     try {
       // Public providers (`requires_account: false`) probe credential-free;
       // anything else resolves the health-filtered account selected above.
@@ -305,6 +309,13 @@ export class ProviderProbingService {
           if (ttfbMs === undefined) ttfbMs = Date.now() - startedAt;
           if (!response.results || response.results.length === 0) {
             dispatchError = new GatewayError("platform_unavailable", 502, "web search returned no results");
+          } else {
+            // Show what the provider actually returned, so a green probe proves
+            // the results are usable and not merely that the endpoint answered.
+            const first = response.results[0];
+            nativeSample = first
+              ? `${response.results.length} result(s) · ${first.title} — ${first.url}`
+              : `${response.results.length} result(s)`;
           }
         } else if (serviceKind === "systemone") {
           // the model through the System One route.
@@ -507,7 +518,7 @@ export class ProviderProbingService {
         .catch(() => undefined);
     }
 
-    const sample = extractSample(events);
+    const sample = isNativeService ? nativeSample : extractSample(events);
     return {
       ...(accountId ? { accountId } : {}),
       ok,
