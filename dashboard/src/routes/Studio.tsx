@@ -56,7 +56,7 @@ import {
   MAX_TOOL_TURNS,
   TOOL_DEFS,
   executeStudioToolAsync,
-  webToolsExplicitlyRequested,
+  webToolsRequested,
 } from "./model-lab/tools";
 import {
   ACCEPT_STRING,
@@ -791,7 +791,7 @@ export default function ModelLab(): ReactNode {
     startedAt: number,
   ): Promise<void> {
     const wire: Array<Record<string, unknown>> = toWireHistory(systemPrompt, history);
-    const allowWebTools = webToolsExplicitlyRequested(prompt);
+    const allowWebTools = webToolsRequested(prompt);
     const availableToolDefs = allowWebTools ? TOOL_DEFS : LOCAL_TOOL_DEFS;
     const displayCalls: Array<{ name: string; args: string; result: string }> = [];
     const toolRounds: Array<{ toolCalls: Array<{ name: string; args: string; result: string }> }> = [];

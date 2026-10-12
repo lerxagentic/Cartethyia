@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "../../shared/toast";
 import { useClipboard } from "../../hooks/use-clipboard";
-import { mermaidToAscii } from "../../routes/model-lab/tools";
+import { MermaidDiagram } from "./MermaidDiagram";
 
 function CodeBlock({ children }: { children?: ReactNode }): ReactNode {
   const ref = useRef<HTMLPreElement | null>(null);
@@ -62,8 +62,13 @@ export function Markdown({ text }: { text: string }): ReactNode {
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
         code: ({ children, className }) => {
           const source = String(children).replace(/\n$/, "");
-          const content = className?.includes("language-mermaid") ? mermaidToAscii(source) : source;
-          return <code style={{ fontFamily: "var(--font-mono)", fontSize: "11.5px" }}>{content}</code>;
+          // A mermaid fence is a diagram, not code: render it. The ASCII
+          // fallback this used to produce was unreadable for anything past a
+          // three-node flow, which is why diagrams now draw for real.
+          if (className?.includes("language-mermaid")) {
+            return <MermaidDiagram source={source} />;
+          }
+          return <code style={{ fontFamily: "var(--font-mono)", fontSize: "11.5px" }}>{source}</code>;
         },
         p: ({ children }) => <p style={{ margin: "0 0 8px", lineHeight: 1.65 }}>{children}</p>,
         h1: ({ children }) => <h1 style={{ fontSize: "17px", fontWeight: 700, margin: "12px 0 6px" }}>{children}</h1>,

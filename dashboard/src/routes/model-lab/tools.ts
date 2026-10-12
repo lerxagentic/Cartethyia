@@ -100,10 +100,13 @@ export const STUDIO_TOOLS = [
   },
   {
     name: "render_mermaid",
-    description: "Convert Mermaid flowchart or sequence syntax to a readable ASCII diagram.",
+    description:
+      "Draw a Mermaid diagram (flowchart, sequence, class, state, ER) and show it to the user as a picture. Return the Mermaid source; the transcript renders it. Use this whenever a diagram explains the answer better than prose.",
     parameters: {
       type: "object",
-      properties: { code: { type: "string", description: "Mermaid diagram source" } },
+      properties: {
+        code: { type: "string", description: "Mermaid diagram source, e.g. 'flowchart TD\\n  A-->B'" },
+      },
       required: ["code"],
     },
   },
@@ -131,12 +134,34 @@ const NETWORK_TOOLS = new Set<string>(NETWORK_TOOL_NAMES);
 
 export const LOCAL_TOOL_DEFS = TOOL_DEFS.filter(({ function: tool }) => !NETWORK_TOOLS.has(tool.name));
 
-/** Network tools are opt-in: a generic prompt must never trigger a fetch. */
-export function webToolsExplicitlyRequested(prompt: string): boolean {
-  return /(?:\bweb\s*fetch\b|\bweb\s*search\b|\bsearch\s+the\s+web\b|\bcari\s+di\s+(?:web|internet)\b|\bfetch\s+https?:\/\/|\bopen\s+https?:\/\/|\bbuka\s+https?:\/\/|https?:\/\/\S+)/i.test(
+/** Whether the prompt asks for something the model cannot know by itself.
+ *
+ * Two independent signals arm the network tools:
+ *
+ * 1. An explicit request — "web search", "fetch <url>", a bare URL.
+ * 2. A recency intent — "today", "current price", "latest news", "harga emas
+ *    hari ini". A model asked for today's gold price has no way to answer
+ *    without a search, and withholding the tool leaves it apologising instead
+ *    of looking. This is still narrow: a timeless question ("explain TCP",
+ *    "write a haiku") matches neither signal and stays offline.
+ *
+ * Arming is not the same as calling: the model still decides whether to use the
+ * tool, so a false positive costs a tool definition in the request, not an
+ * outbound fetch.
+ */
+export function webToolsRequested(prompt: string): boolean {
+  if (/(?:\bweb\s*fetch\b|\bweb\s*search\b|\bsearch\s+the\s+web\b|\bcari\s+di\s+(?:web|internet)\b|\bfetch\s+https?:\/\/|\bopen\s+https?:\/\/|\bbuka\s+https?:\/\/|https?:\/\/\S+)/i.test(prompt)) {
+    return true;
+  }
+  // Recency intent: the answer depends on data that changed after training.
+  return /(?:\btoday\b|\btonight\b|\bnow\b|\bcurrent(?:ly)?\b|\blatest\b|\brecent(?:ly)?\b|\bthis\s+(?:week|month|year)\b|\bright\s+now\b|\bnews\b|\bhari\s+ini\b|\bsekarang\b|\bsaat\s+ini\b|\bterkini\b|\bterbaru\b|\bberita\b|\bkabar\s+terbaru\b|\bharga\s+\S+\s+(?:hari\s+ini|sekarang|terkini)\b|\bupdate\s+terbaru\b)/i.test(
     prompt,
   );
 }
+
+/** @deprecated Use {@link webToolsRequested}; kept for callers that predate the
+ *  recency signal. */
+export const webToolsExplicitlyRequested = webToolsRequested;
 
 export function parseStudioToolArgs(argsText: string): Record<string, unknown> | { error: string } {
   try {
@@ -313,25 +338,19 @@ export function executeStudioTool(name: string, argsText: string): string {
   }
   if (name === "render_mermaid") {
     const code = args["code"];
-    return typeof code === "string"
-      ? JSON.stringify({ ascii: mermaidToAscii(code) })
-      : JSON.stringify({ error: "render_mermaid requires {code: string}" });
+    if (typeof code !== "string" || code.trim().length === 0) {
+      return JSON.stringify({ error: "render_mermaid requires {code: string}" });
+    }
+    // The transcript renders a ```mermaid fence as a real diagram, so the tool
+    // hands the source back in exactly that shape. Rendering it to ASCII here
+    // (the old behaviour) produced unreadable output for anything larger than a
+    // three-node flow and threw away the layout Mermaid would have drawn.
+    return JSON.stringify({
+      rendered: "shown to the user as a diagram",
+      mermaid: `\`\`\`mermaid\n${code}\n\`\`\``,
+    });
   }
   return JSON.stringify({ error: `unknown tool: ${name}` });
-}
-
-export function mermaidToAscii(source: string): string {
-  const lines = source
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("%%"));
-  const edges = lines.flatMap((line) => {
-    const flow = line.match(/^([A-Za-z0-9_-]+)\s*--+>\s*(?:\|([^|]*)\|\s*)?([A-Za-z0-9_-]+)/);
-    if (flow) return [`${flow[1]}${flow[2] ? ` -[${flow[2]}]->` : " -->"} ${flow[3]}`];
-    const sequence = line.match(/^([A-Za-z0-9_-]+)\s*[-=]+>>\s*([A-Za-z0-9_-]+)\s*:\s*(.+)$/);
-    return sequence ? [`${sequence[1]} -> ${sequence[2]}: ${sequence[3]}`] : [];
-  });
-  return edges.length > 0 ? edges.join("\n") : lines.join("\n");
 }
 
 /** Executes local, sandboxed, or backend-backed Studio tools.

@@ -23,7 +23,7 @@ import {
   evaluateArithmetic,
   executeStudioTool,
   queryJsonPath,
-  webToolsExplicitlyRequested,
+  webToolsRequested,
 } from "../../dashboard/src/routes/model-lab/tools";
 
 describe("studio calculate", () => {
@@ -145,13 +145,44 @@ describe("studio tool gating", () => {
       "cari di web tentang harga emas",
       "what does https://example.com say",
     ]) {
-      expect(webToolsExplicitlyRequested(prompt)).toBe(true);
+      expect(webToolsRequested(prompt)).toBe(true);
+    }
+  });
+
+  test("a recency question arms them too, so the model can actually look", () => {
+    // Regression: \"harga emas hari ini berapa?\" matched neither signal, so the
+    // model was never given web_search and answered that it had no live data.
+    for (const prompt of [
+      "harga emas hari ini berapa?",
+      "berapa harga emas sekarang",
+      "what is the current price of gold",
+      "latest news about AI",
+      "kabar terbaru hari ini",
+      "what happened today",
+      "berita terkini",
+    ]) {
+      expect(webToolsRequested(prompt)).toBe(true);
     }
   });
 
   test("an ordinary question does not arm them", () => {
-    for (const prompt of ["write a haiku", "explain TCP", "compute 2+2", "ringkas teks ini"]) {
-      expect(webToolsExplicitlyRequested(prompt)).toBe(false);
+    for (const prompt of ["write a haiku", "explain TCP", "compute 2+2", "ringkas teks ini", "kamu siapa?"]) {
+      expect(webToolsRequested(prompt)).toBe(false);
     }
+  });
+});
+
+describe("studio render_mermaid", () => {
+  test("returns a mermaid fence so the transcript can draw it", () => {
+    const out = JSON.parse(executeStudioTool("render_mermaid", '{"code":"flowchart TD\\n  A-->B"}'));
+    expect(out.mermaid).toContain("```mermaid");
+    expect(out.mermaid).toContain("A-->B");
+    // The ASCII rendering was the old output and is gone.
+    expect(out.ascii).toBeUndefined();
+  });
+
+  test("an empty source is an error field", () => {
+    const out = JSON.parse(executeStudioTool("render_mermaid", '{"code":"   "}'));
+    expect(typeof out.error).toBe("string");
   });
 });
