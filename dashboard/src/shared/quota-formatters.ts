@@ -112,6 +112,69 @@ export function freeAccessBadge(access: FreeAccess | null): string | null {
   return access.recurring ? `Free · resets ${formatted}` : `Free until ${formatted}`;
 }
 
+/** Models proven to consume 0 credits on CodeBuddy / WorkBuddy */
+const BUDDY_FREE_MODELS = new Set([
+  "deepseek-v4.1-flash",
+  "deepseek-v4.1-flash-sg",
+  "auto",
+  "hy3",
+  "hy4-preview-f",
+  "gemini-2.5-flash-image",
+  "gemini-3.0-pro-image",
+  "gemini-3.1-flash-image",
+  "gemini-3.1-pro",
+  "gemini-3.5-flash",
+  "glm-5.3",
+  "glm-5.3-flash",
+  "glm-5v-turbo",
+  "kimi-k2.5",
+  "kimi-k2.6",
+  "kimi-k2.7",
+  "minimax-m3",
+]);
+
+/** Returns badge text for a model that does not deduct credits/quota, or null if paid. */
+export function modelFreeBadge(
+  providerId: string,
+  modelId: string,
+  access: FreeAccess | null,
+): { label: string; tooltip: string } | null {
+  const normProv = providerId.toLowerCase();
+  const isBuddy = normProv === "cb" || normProv === "workbuddy" || normProv === "cbcn";
+
+  if (isBuddy) {
+    if (BUDDY_FREE_MODELS.has(modelId)) {
+      const untilDate = access?.until ? new Date(access.until) : null;
+      const formatted =
+        untilDate && Number.isFinite(untilDate.getTime())
+          ? untilDate.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })
+          : null;
+
+      const label = formatted ? `FREE until ${formatted}` : "FREE (0 credit)";
+      const tooltip = formatted
+        ? `Model ini gratis (0 credit) dan tidak memotong kuota paket hingga ${formatted}`
+        : "Model ini gratis (0 credit) dan tidak memotong kuota paket";
+      return { label, tooltip };
+    }
+    // Paid buddy model
+    return null;
+  }
+
+  // Non-buddy: fallback to plan-level badge if free
+  if (access) {
+    const label = freeAccessBadge(access);
+    if (!label) return null;
+    return {
+      label,
+      tooltip: `${access.plan}${
+        access.remainingPercent !== null ? ` · ${Math.round(access.remainingPercent)}% remaining` : ""
+      }`,
+    };
+  }
+
+  return null;
+}
+
 export interface QuotaBarTone {
   bar: string;
   text: string;

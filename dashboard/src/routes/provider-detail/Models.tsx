@@ -31,7 +31,7 @@ import {
   useSetModelEnabled,
 } from "../../hooks/providers";
 import { formatModelTokens, UNKNOWN_LIMITS_TOOLTIP } from "../../shared/model-limits";
-import { freeAccessBadge, type FreeAccess } from "../../shared/quota-formatters";
+import { modelFreeBadge, type FreeAccess } from "../../shared/quota-formatters";
 import { toast } from "../../shared/toast";
 import { useTrackedTimeout } from "../../hooks/use-timeout";
 import { PROBE_REASONING_EFFORTS, formatThinkingSuffix, type ModelCatalogEntry, type ProbeReasoningEffort } from "../../data/contracts";
@@ -577,24 +577,15 @@ function ModelCard({
                 </span>
               )}
               {(() => {
-                // Free-tier badge. It carries the plan and, when the provider
-                // stated one, the date free access runs to — a recurring
-                // allowance reads "resets", a real grant reads "until", and an
-                // exhausted one says so rather than showing a dead date.
-                const label = freeAccessBadge(freeAccess);
-                if (label === null) return null;
+                // Free-tier badge per-model. Shows only for models that do not
+                // deduct credits (e.g. deepseek-v4.1-flash, hy3), paired with
+                // the real quota window expiry.
+                const badge = modelFreeBadge(providerId, model.modelId, freeAccess);
+                if (badge === null) return null;
                 const exhausted = freeAccess?.exhausted === true;
                 return (
                   <span
-                    title={
-                      freeAccess
-                        ? `${freeAccess.plan}${
-                            freeAccess.remainingPercent !== null
-                              ? ` · ${Math.round(freeAccess.remainingPercent)}% remaining`
-                              : ""
-                          }`
-                        : undefined
-                    }
+                    title={badge.tooltip}
                     style={{
                       flexShrink: 0,
                       fontSize: "9px",
@@ -606,7 +597,7 @@ function ModelCard({
                       border: `1px solid color-mix(in srgb, ${exhausted ? "var(--orange)" : "var(--green)"} 35%, transparent)`,
                     }}
                   >
-                    {label}
+                    {badge.label}
                   </span>
                 );
               })()}
