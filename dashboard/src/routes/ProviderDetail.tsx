@@ -505,7 +505,7 @@ export default function ProviderDetail(): ReactNode {
                         newMap.set(r.modelId, { ok: r.ok, latencyMs: r.latencyMs });
                         if (r.ok) successCount += 1;
                       }
-                      setModelProbeResults(newMap);
+                      setModelProbeResults(new Map(newMap));
                       toast.success(
                         "Test all models finished",
                         `${successCount}/${data.results.length} model aktif & siap digunakan`,
@@ -598,6 +598,7 @@ export default function ProviderDetail(): ReactNode {
               freeAccess={freeAccess}
               quotaWindows={quotaWindows}
               batchProbeResults={modelProbeResults}
+              isTestingAll={probeAllModels.isPending}
             />
           )}
         </CardBody>

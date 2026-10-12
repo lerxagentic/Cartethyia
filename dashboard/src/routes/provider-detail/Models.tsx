@@ -16,7 +16,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Dialog } from "../../components/ui/dialog";
@@ -396,6 +396,7 @@ function ModelCard({
   freeAccess,
   quotaWindows,
   batchProbeResult,
+  isTestingAll,
 }: {
   readonly providerId: string;
   readonly model: ModelCatalogEntry;
@@ -408,12 +409,20 @@ function ModelCard({
   readonly freeAccess: FreeAccess | null;
   readonly quotaWindows?: readonly QuotaWindow[] | null;
   readonly batchProbeResult?: { ok: boolean; latencyMs: number } | null;
+  readonly isTestingAll?: boolean;
 }): ReactNode {
   const probe = useProbeModel();
   const setEnabled = useSetModelEnabled();
   const [copied, setCopied] = useState(false);
   const [localProbeResult, setLocalProbeResult] = useState<{ ok: boolean; latencyMs: number } | null>(null);
   const scheduleCopyReset = useTrackedTimeout();
+  const [lastBatchResult, setLastBatchResult] = useState(batchProbeResult);
+
+  if (batchProbeResult !== lastBatchResult) {
+    setLastBatchResult(batchProbeResult);
+    setLocalProbeResult(null);
+  }
+
   const probeResult = localProbeResult ?? batchProbeResult ?? null;
 
   // The routable id for this model under the section's thinking setting. The
@@ -705,21 +714,23 @@ function ModelCard({
           <Button
             variant="secondary"
             size="sm"
-            disabled={probe.isPending}
+            disabled={probe.isPending || isTestingAll}
             onClick={runProbe}
             aria-label={`Test ${qualifiedId}`}
             title={
-              probe.isPending
-                ? `Probing ${qualifiedId}…`
-                : probeResult?.ok
-                  ? `Last probe OK in ${formatProbeDuration(probeResult.latencyMs)} — click to re-test`
-                  : probeResult
-                    ? "Last probe failed — click to retry"
-                    : `Test ${qualifiedId}`
+              isTestingAll
+                ? `Testing all models in progress…`
+                : probe.isPending
+                  ? `Probing ${qualifiedId}…`
+                  : probeResult?.ok
+                    ? `Last probe OK in ${formatProbeDuration(probeResult.latencyMs)} — click to re-test`
+                    : probeResult
+                      ? "Last probe failed — click to retry"
+                      : `Test ${qualifiedId}`
             }
             style={{ flex: 1, justifyContent: "center" }}
             icon={
-              probe.isPending ? (
+              isTestingAll || probe.isPending ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : probeResult ? (
                 probeResult.ok ? (
@@ -736,8 +747,8 @@ function ModelCard({
               )
             }
           >
-            {probe.isPending
-              ? "Thinking…"
+            {isTestingAll || probe.isPending
+              ? "Testing…"
               : probeResult?.ok
                 ? formatProbeDuration(probeResult.latencyMs)
                 : probeResult
@@ -765,7 +776,7 @@ function ModelCard({
             <Button
               variant="ghost"
               size="sm"
-              disabled={deletePending}
+              disabled={deletePending || isTestingAll}
               onClick={() => onDeleteRequest(model)}
               icon={<Trash2 size={12} />}
               aria-label={`Delete ${model.modelId}`}
@@ -779,8 +790,6 @@ function ModelCard({
     </>
   );
 }
-
-const MemoModelCard = memo(ModelCard);
 
 /** Wire-family chip colors: chat = teal, responses = purple, messages = orange. */
 function wireChipStyle(wireFamily: string): { color: string; background: string } {
@@ -808,6 +817,7 @@ export function ModelGrid({
   freeAccess,
   quotaWindows,
   batchProbeResults,
+  isTestingAll,
 }: {
   readonly providerId: string;
   readonly models: readonly ModelCatalogEntry[];
@@ -818,6 +828,7 @@ export function ModelGrid({
   readonly freeAccess?: FreeAccess | null;
   readonly quotaWindows?: readonly QuotaWindow[] | null;
   readonly batchProbeResults?: ReadonlyMap<string, { ok: boolean; latencyMs: number }> | null;
+  readonly isTestingAll?: boolean;
 }): ReactNode {
   const deleteModel = useDeleteProviderModel();
   const [deleteTarget, setDeleteTarget] = useState<ModelCatalogEntry | null>(null);
@@ -832,7 +843,7 @@ export function ModelGrid({
     rows: models.filter((model) => group.matches(model.source)),
   }));
   const renderCard = (model: ModelCatalogEntry) => (
-    <MemoModelCard
+    <ModelCard
       key={`${model.modelId}::${model.route}`}
       providerId={providerId}
       model={model}
@@ -842,6 +853,7 @@ export function ModelGrid({
       freeAccess={freeAccess ?? null}
       quotaWindows={quotaWindows}
       batchProbeResult={batchProbeResults?.get(model.modelId) ?? null}
+      isTestingAll={isTestingAll}
     />
   );
   return (
