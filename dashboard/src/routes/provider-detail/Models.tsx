@@ -31,6 +31,7 @@ import {
   useSetModelEnabled,
 } from "../../hooks/providers";
 import { formatModelTokens, UNKNOWN_LIMITS_TOOLTIP } from "../../shared/model-limits";
+import { freeAccessBadge, type FreeAccess } from "../../shared/quota-formatters";
 import { toast } from "../../shared/toast";
 import { useTrackedTimeout } from "../../hooks/use-timeout";
 import { PROBE_REASONING_EFFORTS, formatThinkingSuffix, type ModelCatalogEntry, type ProbeReasoningEffort } from "../../data/contracts";
@@ -391,6 +392,7 @@ function ModelCard({
   thinkingEffort,
   onDeleteRequest,
   deletePending,
+  freeAccess,
 }: {
   readonly providerId: string;
   readonly model: ModelCatalogEntry;
@@ -400,6 +402,7 @@ function ModelCard({
   readonly thinkingEffort: ProbeReasoningEffort;
   readonly onDeleteRequest: (model: ModelCatalogEntry) => void;
   readonly deletePending: boolean;
+  readonly freeAccess: FreeAccess | null;
 }): ReactNode {
   const probe = useProbeModel();
   const setEnabled = useSetModelEnabled();
@@ -573,6 +576,40 @@ function ModelCard({
                   Off
                 </span>
               )}
+              {(() => {
+                // Free-tier badge. It carries the plan and, when the provider
+                // stated one, the date free access runs to — a recurring
+                // allowance reads "resets", a real grant reads "until", and an
+                // exhausted one says so rather than showing a dead date.
+                const label = freeAccessBadge(freeAccess);
+                if (label === null) return null;
+                const exhausted = freeAccess?.exhausted === true;
+                return (
+                  <span
+                    title={
+                      freeAccess
+                        ? `${freeAccess.plan}${
+                            freeAccess.remainingPercent !== null
+                              ? ` · ${Math.round(freeAccess.remainingPercent)}% remaining`
+                              : ""
+                          }`
+                        : undefined
+                    }
+                    style={{
+                      flexShrink: 0,
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      letterSpacing: "0.04em",
+                      padding: "1px 6px",
+                      borderRadius: "999px",
+                      color: exhausted ? "var(--orange)" : "var(--green)",
+                      border: `1px solid color-mix(in srgb, ${exhausted ? "var(--orange)" : "var(--green)"} 35%, transparent)`,
+                    }}
+                  >
+                    {label}
+                  </span>
+                );
+              })()}
             </div>
           </div>
           <Button
@@ -771,10 +808,15 @@ export function ModelGrid({
   providerId,
   models,
   thinkingEffort,
+  freeAccess,
 }: {
   readonly providerId: string;
   readonly models: readonly ModelCatalogEntry[];
   readonly thinkingEffort: ProbeReasoningEffort;
+  /** Free-tier state for this provider, when it has one. Every model served by
+   *  a free-plan provider inherits the badge: the plan is a property of the
+   *  account, not of an individual model. */
+  readonly freeAccess?: FreeAccess | null;
 }): ReactNode {
   const deleteModel = useDeleteProviderModel();
   const [deleteTarget, setDeleteTarget] = useState<ModelCatalogEntry | null>(null);
@@ -796,6 +838,7 @@ export function ModelGrid({
       thinkingEffort={thinkingEffort}
       deletePending={deleteModel.isPending}
       onDeleteRequest={setDeleteTarget}
+      freeAccess={freeAccess ?? null}
     />
   );
   return (

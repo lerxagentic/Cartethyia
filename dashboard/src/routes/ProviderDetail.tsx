@@ -49,6 +49,8 @@ import {
   missingRequiredFields,
 } from "./provider-detail/ImportCredentialDialog";
 import { AddModelModal, ModelGrid, ThinkingSelect } from "./provider-detail/Models";
+import { freeAccessFromQuota } from "../shared/quota-formatters";
+import { useQuotaOverview } from "../hooks/quota";
 import { PROBE_REASONING_EFFORTS, type ProbeReasoningEffort } from "../data/contracts";
 
 export default function ProviderDetail(): ReactNode {
@@ -57,6 +59,13 @@ export default function ProviderDetail(): ReactNode {
   const providersQuery = useProviders();
   const modelsQuery = useProviderModels(id);
   const accountsQuery = useProviderAccounts(id);
+  // Free-tier state comes from the same quota projection the account cards read,
+  // so the badge cannot disagree with the quota panel on the same page. The
+  // query is already cached by the accounts section, so this adds no request.
+  const quotaQuery = useQuotaOverview();
+  const freeAccess = freeAccessFromQuota(
+    quotaQuery.data?.accounts.find((entry) => entry.provider === id)?.quota ?? null,
+  );
   const syncModels = useSyncProviderModels();
   const autoSyncModels = useSyncProviderModels({ silent: true });
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -542,7 +551,7 @@ export default function ProviderDetail(): ReactNode {
               message="No models published by this provider yet. Sync or add a custom model above."
             />
           ) : (
-            <ModelGrid providerId={id} models={stableModels} thinkingEffort={thinkingEffort} />
+            <ModelGrid providerId={id} models={stableModels} thinkingEffort={thinkingEffort} freeAccess={freeAccess} />
           )}
         </CardBody>
       </Card>

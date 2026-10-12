@@ -1,3 +1,117 @@
+import type { QuotaWindow } from "../hooks/quota";
+
+export interface FreeAccess {
+  /** The plan name as the provider reported it, e.g. "Free Plan Subscription". */
+  readonly plan: string;
+  /** Farthest date free access is known to run to, ISO 8601. */
+  readonly until: string | null;
+  /**
+   * True when `until` is a recurring reset (a monthly allowance rolling over)
+   * rather than a hard expiry. The two read very differently to an operator: a
+   * reset means "still free after this date", an expiry means "not free after".
+   */
+  readonly recurring: boolean;
+  /** True when every free window has been used up. */
+  readonly exhausted: boolean;
+  /** Highest remaining percentage across the free windows, for a compact badge. */
+  readonly remainingPercent: number | null;
+}
+
+/** Whether a provider plan name describes a free tier. */
+function isFreePlan(plan: string | null | undefined): plan is string {
+  if (typeof plan !== "string") return false;
+  return /\bfree\b/i.test(plan);
+}
+
+/**
+ * Derives the free-tier badge for one account's quota.
+ *
+ * Returns null for a paid plan, so a caller can render nothing rather than a
+ * misleading "Free" label on a pay-per-use account.
+ *
+ * The subtlety this exists to handle: a free tier is usually reported as *two*
+ * kinds of window, and they mean different things.
+ *
+ * - A **recurring** window ("Monthly", `recurring: true`) is an allowance that
+ *   refills. Its `resetsAt` is not an end date — the account is still free
+ *   afterwards. Labelling that "free until" would be wrong.
+ * - A **non-recurring** window ("Bonus Pack", `recurring: false`) is a grant
+ *   with a real deadline. That date *is* an end date.
+ *
+ * So a hard expiry is preferred when one exists, and a recurring window is only
+ * used as a fallback (reported with `recurring: true` so the UI can say "resets"
+ * instead of "until"). Windows that are already spent are ignored, because a
+ * date on an exhausted grant is not a date the operator can still use.
+ */
+export function freeAccessFromQuota(
+  quota: { readonly plan: string | null; readonly windows: readonly QuotaWindow[] } | null | undefined,
+): FreeAccess | null {
+  if (!quota || !isFreePlan(quota.plan)) return null;
+  const plan = quota.plan;
+  const windows = quota.windows ?? [];
+
+  /** A window still has value when it is not fully consumed. */
+  const hasRemaining = (window: QuotaWindow): boolean => {
+    if (typeof window.remainingPercent === "number") return window.remainingPercent > 0;
+    if (typeof window.remaining === "number") return window.remaining > 0;
+    // No percentage or absolute figure: treat a dated window as still usable
+    // rather than hiding it, since the provider did report a live grant.
+    return window.resetsAt !== null;
+  };
+
+  const usable = windows.filter(hasRemaining);
+  // No windows at all is not the same as "all spent": the provider reported a
+  // free plan but no window detail, so the honest state is unknown. Saying
+  // "exhausted" would claim the quota is gone when it may be untouched, and
+  // saying "usable" would imply a date we do not have. `until: null` with
+  // `exhausted: false` renders the bare "Free plan" badge, which is all that
+  // is actually known.
+  if (windows.length === 0) {
+    return { plan, until: null, recurring: false, exhausted: false, remainingPercent: null };
+  }
+  if (usable.length === 0) {
+    return { plan, until: null, recurring: false, exhausted: true, remainingPercent: 0 };
+  }
+
+  const dateOf = (window: QuotaWindow): number => {
+    const ms = window.resetsAt ? new Date(window.resetsAt).getTime() : Number.NaN;
+    return Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
+  };
+
+  // A hard expiry outranks a recurring reset: it is the date access actually
+  // ends, which is what "free until" means.
+  const expiries = usable.filter((window) => window.recurring === false && window.resetsAt !== null);
+  const pool = expiries.length > 0 ? expiries : usable.filter((window) => window.resetsAt !== null);
+  const chosen = pool.reduce<QuotaWindow | null>(
+    (best, window) => (best === null || dateOf(window) > dateOf(best) ? window : best),
+    null,
+  );
+
+  const percents = usable
+    .map((window) => window.remainingPercent)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  return {
+    plan,
+    until: chosen?.resetsAt ?? null,
+    // Only a fallback (non-expiry) window is recurring; an expiry is not.
+    recurring: chosen !== null && chosen.recurring !== false,
+    exhausted: false,
+    remainingPercent: percents.length > 0 ? Math.max(...percents) : null,
+  };
+}
+
+/** Compact badge text for a free tier, or null when there is nothing to show. */
+export function freeAccessBadge(access: FreeAccess | null): string | null {
+  if (!access) return null;
+  if (access.exhausted) return "Free quota used";
+  if (!access.until) return "Free plan";
+  const date = new Date(access.until);
+  if (!Number.isFinite(date.getTime())) return "Free plan";
+  const formatted = date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  return access.recurring ? `Free · resets ${formatted}` : `Free until ${formatted}`;
+}
+
 export interface QuotaBarTone {
   bar: string;
   text: string;
