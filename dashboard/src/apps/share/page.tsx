@@ -114,25 +114,25 @@ function ModelCard({
           ) : null}
         </span>
         <span className="share-model-card-limits">
-          {/* Input and output are separate labelled chips: a single grey run of
-              text left the context window reading as absent next to `out`. */}
-          <span title="Context window (input tokens)">
+          {/* Each limit names itself: the context window is the input ceiling,
+              not a separate metric from the output number beside it. */}
+          <span title="Context window — the maximum input the model accepts">
             <ArrowDownToLine size={12} aria-hidden="true" />
             {info?.contextLength != null ? (
-              `${formatModelTokens(info.contextLength)} in`
+              `${formatModelTokens(info.contextLength)} context`
             ) : (
               <span title={UNKNOWN_LIMITS_TOOLTIP} className="is-unknown">
-                n/a in
+                n/a context
               </span>
             )}
           </span>
-          <span title="Maximum output tokens">
+          <span title="Maximum output the model can generate">
             <ArrowUpFromLine size={12} aria-hidden="true" />
             {info?.maxOutputTokens != null ? (
-              `${formatModelTokens(info.maxOutputTokens)} out`
+              `${formatModelTokens(info.maxOutputTokens)} output`
             ) : (
               <span title={UNKNOWN_LIMITS_TOOLTIP} className="is-unknown">
-                n/a out
+                n/a output
               </span>
             )}
           </span>

@@ -410,32 +410,32 @@ export function ModelPickerModal({
                             <span title={e.providerLabel}>{e.providerLabel}</span>
                           ) : (
                             <>
-                              {/* Each limit is its own labelled chip so the
-                                  context window cannot be mistaken for a
-                                  missing value next to the output number. */}
+                              {/* Each limit states what it is, so the context
+                                  window cannot be read as a different metric
+                                  than the model's input ceiling. */}
                               <span
                                 style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
-                                title="Context window (input tokens)"
+                                title="Context window — the maximum input the model accepts"
                               >
                                 <ArrowDownToLine size={11} style={{ color: "var(--status-info)", flexShrink: 0 }} />
                                 {e.entry.contextLimit ? (
-                                  `${formatShortTokens(e.entry.contextLimit)} in`
+                                  `${formatShortTokens(e.entry.contextLimit)} context`
                                 ) : (
                                   <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                                    n/a in
+                                    n/a context
                                   </span>
                                 )}
                               </span>
                               <span
                                 style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
-                                title="Maximum output tokens"
+                                title="Maximum output the model can generate"
                               >
                                 <ArrowUpFromLine size={11} style={{ color: "var(--orange)", flexShrink: 0 }} />
                                 {e.entry.outputLimit ? (
-                                  `${formatShortTokens(e.entry.outputLimit)} out`
+                                  `${formatShortTokens(e.entry.outputLimit)} output`
                                 ) : (
                                   <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                                    n/a out
+                                    n/a output
                                   </span>
                                 )}
                               </span>

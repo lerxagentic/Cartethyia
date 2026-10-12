@@ -623,39 +623,39 @@ function ModelCard({
               </span>
             ) : null}
           </span>
-          {/* Context (input) and output are two separate, equally-weighted
-              chips. They used to be one grey run of text where only the
-              trailing `out` number caught the eye, so the context window read
-              as missing; each side now carries its own icon, label, and colour
-              so `in` and `out` are both legible at a glance. */}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
+          {/* Context window (the input ceiling) and max output are two
+              separate chips. `in`/`out` alone was too terse — the context
+              window read as if it were a different metric rather than the
+              model's input limit — so each chip states what it is: `context`
+              for the input ceiling, `output` for the max output. */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "10px", whiteSpace: "nowrap" }}>
             <span
               style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
-              title="Context window (input tokens)"
+              title="Context window — the maximum input the model accepts"
             >
               <ArrowDownToLine size={12} style={{ color: "var(--status-info)", flexShrink: 0 }} />
               {model.contextLimit ? (
                 <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                  {formatModelTokens(model.contextLimit)} in
+                  {formatModelTokens(model.contextLimit)} context
                 </span>
               ) : (
                 <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                  n/a in
+                  n/a context
                 </span>
               )}
             </span>
             <span
               style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
-              title="Maximum output tokens"
+              title="Maximum output the model can generate"
             >
               <ArrowUpFromLine size={12} style={{ color: "var(--orange)", flexShrink: 0 }} />
               {model.outputLimit ? (
                 <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                  {formatModelTokens(model.outputLimit)} out
+                  {formatModelTokens(model.outputLimit)} output
                 </span>
               ) : (
                 <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                  n/a out
+                  n/a output
                 </span>
               )}
             </span>
