@@ -789,6 +789,7 @@ export default function ModelLab(): ReactNode {
     prompt: string,
     controller: AbortController,
     startedAt: number,
+    messageAttachments?: readonly StudioAttachment[],
   ): Promise<void> {
     const wire: Array<Record<string, unknown>> = toWireHistory(systemPrompt, history);
     const allowWebTools = webToolsRequested(prompt);
@@ -866,6 +867,9 @@ export default function ModelLab(): ReactNode {
           controller.signal,
           allowWebTools,
           key,
+          // The files on this message, so file_read / csv_query see what the
+          // operator uploaded instead of asking the model to guess.
+          messageAttachments && messageAttachments.length > 0 ? messageAttachments : undefined,
         );
         setLiveToolCalls((prev) => {
           const next = [...prev];
@@ -983,7 +987,7 @@ export default function ModelLab(): ReactNode {
       liveRef.current = createChatStreamAccumulator();
       setLive(createChatStreamAccumulator());
       try {
-        await runTurns(key, active, history, prompt, controller, startedAt);
+        await runTurns(key, active, history, prompt, controller, startedAt, outgoing);
       } catch (error) {
         if (!controller.signal.aborted && !stopRef.current) setChatError(getErrorMessage(error));
         try {

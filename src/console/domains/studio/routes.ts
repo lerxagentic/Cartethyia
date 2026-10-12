@@ -77,6 +77,52 @@ function htmlText(value: string): string {
     .trim();
 }
 
+const MAX_HTTP_BODY_CHARS = 60_000;
+const HTTP_REQUEST_TIMEOUT_MS = 20_000;
+const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+
+/** Headers a model must not be able to set: they either leak the gateway's
+ *  identity or are re-derived from the body we actually send. */
+const FORBIDDEN_REQUEST_HEADERS = new Set(["host", "content-length", "connection", "authorization", "cookie"]);
+
+async function studioHttpRequest(
+  fetcher: ValidatedFetch,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const url = webUrl(input["url"]);
+  const method = typeof input["method"] === "string" ? input["method"].toUpperCase() : "";
+  if (!HTTP_METHODS.has(method)) {
+    throw new ConsoleDomainError("invalid_http_method", 400, "method must be GET, POST, PUT, PATCH, or DELETE");
+  }
+  const headers: Record<string, string> = {};
+  const rawHeaders = input["headers"];
+  if (isRecord(rawHeaders)) {
+    for (const [key, value] of Object.entries(rawHeaders)) {
+      const name = key.toLowerCase();
+      if (FORBIDDEN_REQUEST_HEADERS.has(name)) continue;
+      if (typeof value === "string") headers[name] = value;
+    }
+  }
+  const rawBody = input["body"];
+  const body = typeof rawBody === "string" && method !== "GET" ? rawBody.slice(0, MAX_HTTP_BODY_CHARS) : undefined;
+
+  const response = await fetcher(url, {
+    method,
+    headers,
+    ...(body === undefined ? {} : { body }),
+    redirect: "follow",
+    signal: AbortSignal.timeout(HTTP_REQUEST_TIMEOUT_MS),
+  });
+  const text = (await response.text()).slice(0, MAX_HTTP_BODY_CHARS);
+  const contentType = response.headers.get("content-type") ?? "";
+  return {
+    status: response.status,
+    ok: response.ok,
+    contentType,
+    body: contentType.includes("json") ? text : htmlText(text),
+  };
+}
+
 async function studioWebFetch(fetcher: ValidatedFetch, value: unknown, maxChars: number): Promise<unknown> {
   const url = webUrl(value);
   const response = await fetcher(url, {
@@ -169,6 +215,15 @@ export function createStudioOperations(config: StudioConfig) {
       if (!config.webFetch) throw new ConsoleDomainError("web_tools_unavailable", 503, "web tools are unavailable");
       const limit = typeof maxChars === "number" && Number.isFinite(maxChars) ? maxChars : MAX_WEB_CHARS;
       return studioWebFetch(config.webFetch(authorized.tenantId), url, limit);
+    },
+
+    /** `http_request`: method + headers + body through the SSRF-validated
+     *  fetcher, so a model cannot reach the metadata service or localhost. */
+    async httpRequest(access: AccessDecision | undefined, input: unknown): Promise<unknown> {
+      const authorized = requireTenantScope(access, "dashboard:write");
+      if (!config.webFetch) throw new ConsoleDomainError("web_tools_unavailable", 503, "web tools are unavailable");
+      const record = isRecord(input) ? input : {};
+      return studioHttpRequest(config.webFetch(authorized.tenantId), record);
     },
 
     async patchSession(
@@ -383,6 +438,13 @@ export function createStudioRoutes(config: StudioConfig): Elysia {
         return await operations.webFetch(config.accessResolver(request), input["url"], input["maxChars"]);
       } catch (error) {
         return errorResponse(error, set, "Studio web fetch failed");
+      }
+    })
+    .post("/http-request", async ({ request, body, set }) => {
+      try {
+        return await operations.httpRequest(config.accessResolver(request), body);
+      } catch (error) {
+        return errorResponse(error, set, "Studio HTTP request failed");
       }
     })
     .post("/key", async ({ request, set }) => {

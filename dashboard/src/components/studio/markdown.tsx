@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { toast } from "../../shared/toast";
 import { useClipboard } from "../../hooks/use-clipboard";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { ChartBlock } from "./ChartBlock";
 
 function CodeBlock({ children }: { children?: ReactNode }): ReactNode {
   const ref = useRef<HTMLPreElement | null>(null);
@@ -67,6 +68,9 @@ export function Markdown({ text }: { text: string }): ReactNode {
           // three-node flow, which is why diagrams now draw for real.
           if (className?.includes("language-mermaid")) {
             return <MermaidDiagram source={source} />;
+          }
+          if (className?.includes("language-chart")) {
+            return <ChartBlock source={source} />;
           }
           return <code style={{ fontFamily: "var(--font-mono)", fontSize: "11.5px" }}>{source}</code>;
         },

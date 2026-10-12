@@ -132,7 +132,26 @@ describe("studio tool gating", () => {
   test("the full set contains every declared tool", () => {
     const names = TOOL_DEFS.map((d) => d.function.name).sort();
     expect(names).toEqual(
-      ["base64", "calculate", "clock", "json_query", "printf", "render_mermaid", "run_javascript", "web_fetch", "web_search"],
+      [
+        "base64",
+        "calculate",
+        "clock",
+        "csv_query",
+        "datetime_math",
+        "diff_text",
+        "file_read",
+        "hash_text",
+        "http_request",
+        "json_query",
+        "printf",
+        "regex_extract",
+        "render_chart",
+        "render_mermaid",
+        "run_javascript",
+        "unit_convert",
+        "web_fetch",
+        "web_search",
+      ],
     );
   });
 
