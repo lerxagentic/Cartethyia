@@ -500,8 +500,10 @@ export default function ProviderDetail(): ReactNode {
                   if (targetModels.length === 0) return;
 
                   setIsTestingAllModels(true);
+                  // Reset previous batch probe results so users see fresh progress
+                  setModelProbeResults(new Map());
                   let successCount = 0;
-                  const CONCURRENCY = 4;
+                  const CONCURRENCY = 3;
 
                   try {
                     for (let i = 0; i < targetModels.length; i += CONCURRENCY) {

@@ -730,7 +730,7 @@ function ModelCard({
             }
             style={{ flex: 1, justifyContent: "center" }}
             icon={
-              isTestingAll || probe.isPending ? (
+              probe.isPending ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : probeResult ? (
                 probeResult.ok ? (
@@ -742,18 +742,22 @@ function ModelCard({
                     <AlertTriangle size={12} />
                   </span>
                 )
+              ) : isTestingAll ? (
+                <Loader2 size={12} className="animate-spin" />
               ) : (
                 <FlaskConical size={12} />
               )
             }
           >
-            {isTestingAll || probe.isPending
-              ? "Testing…"
+            {probe.isPending
+              ? "Thinking…"
               : probeResult?.ok
                 ? formatProbeDuration(probeResult.latencyMs)
                 : probeResult
                   ? "Fail"
-                  : "Test"}
+                  : isTestingAll
+                    ? "Queued…"
+                    : "Test"}
           </Button>
           <Button
             variant="ghost"
