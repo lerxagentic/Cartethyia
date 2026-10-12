@@ -1,5 +1,7 @@
 import {
   AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Bot,
   Brain,
   Check,
@@ -621,21 +623,42 @@ function ModelCard({
               </span>
             ) : null}
           </span>
-          <span style={{ whiteSpace: "nowrap" }}>
-            {model.contextLimit ? (
-              `${formatModelTokens(model.contextLimit)} ctx`
-            ) : (
-              <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                n/a ctx
-              </span>
-            )}
-            {model.outputLimit ? (
-              ` · ${formatModelTokens(model.outputLimit)} out`
-            ) : (
-              <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                {` · n/a out`}
-              </span>
-            )}
+          {/* Context (input) and output are two separate, equally-weighted
+              chips. They used to be one grey run of text where only the
+              trailing `out` number caught the eye, so the context window read
+              as missing; each side now carries its own icon, label, and colour
+              so `in` and `out` are both legible at a glance. */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
+            <span
+              style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
+              title="Context window (input tokens)"
+            >
+              <ArrowDownToLine size={12} style={{ color: "var(--status-info)", flexShrink: 0 }} />
+              {model.contextLimit ? (
+                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                  {formatModelTokens(model.contextLimit)} in
+                </span>
+              ) : (
+                <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
+                  n/a in
+                </span>
+              )}
+            </span>
+            <span
+              style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
+              title="Maximum output tokens"
+            >
+              <ArrowUpFromLine size={12} style={{ color: "var(--orange)", flexShrink: 0 }} />
+              {model.outputLimit ? (
+                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                  {formatModelTokens(model.outputLimit)} out
+                </span>
+              ) : (
+                <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
+                  n/a out
+                </span>
+              )}
+            </span>
           </span>
         </div>
 

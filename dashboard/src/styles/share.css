@@ -584,10 +584,32 @@ html[data-app="share"] .share-hud-card {
 }
 
 .share-model-card-limits {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Each limit is its own chip so the context window stays legible beside the
+   output number instead of blurring into one grey run of text. */
+.share-model-card-limits > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.share-model-card-limits > span > svg {
+  flex-shrink: 0;
+}
+
+.share-model-card-limits > span:first-child > svg {
+  color: var(--status-info, #38bdf8);
+}
+
+.share-model-card-limits > span:last-child > svg {
+  color: var(--orange, #f59e0b);
 }
 
 /* A limit the catalog is silent about: the card says so, and the tooltip

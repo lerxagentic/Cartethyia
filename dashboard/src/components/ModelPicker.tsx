@@ -1,4 +1,4 @@
-import { Check, Route, Search, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Check, Route, Search, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "./ui/badge";
@@ -410,21 +410,35 @@ export function ModelPickerModal({
                             <span title={e.providerLabel}>{e.providerLabel}</span>
                           ) : (
                             <>
-                              {e.entry.contextLimit ? (
-                                `${formatShortTokens(e.entry.contextLimit)} ctx`
-                              ) : (
-                                <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                                  n/a ctx
-                                </span>
-                              )}
-                              {` · `}
-                              {e.entry.outputLimit ? (
-                                `${formatShortTokens(e.entry.outputLimit)} out`
-                              ) : (
-                                <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
-                                  n/a out
-                                </span>
-                              )}
+                              {/* Each limit is its own labelled chip so the
+                                  context window cannot be mistaken for a
+                                  missing value next to the output number. */}
+                              <span
+                                style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
+                                title="Context window (input tokens)"
+                              >
+                                <ArrowDownToLine size={11} style={{ color: "var(--status-info)", flexShrink: 0 }} />
+                                {e.entry.contextLimit ? (
+                                  `${formatShortTokens(e.entry.contextLimit)} in`
+                                ) : (
+                                  <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
+                                    n/a in
+                                  </span>
+                                )}
+                              </span>
+                              <span
+                                style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
+                                title="Maximum output tokens"
+                              >
+                                <ArrowUpFromLine size={11} style={{ color: "var(--orange)", flexShrink: 0 }} />
+                                {e.entry.outputLimit ? (
+                                  `${formatShortTokens(e.entry.outputLimit)} out`
+                                ) : (
+                                  <span title={UNKNOWN_LIMITS_TOOLTIP} style={{ cursor: "help" }}>
+                                    n/a out
+                                  </span>
+                                )}
+                              </span>
                           {" · "}
                           <span style={{ color: wireColor(e.entry.wireFamily), fontWeight: 700 }}>
                             {wireName(e.entry.wireFamily)}

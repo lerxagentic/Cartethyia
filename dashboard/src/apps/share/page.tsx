@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { Bot, Brain, CheckCircle2, Eye, FlaskConical, Globe, Home, Moon, Sun, Wrench, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Bot, Brain, CheckCircle2, Eye, FlaskConical, Globe, Home, Moon, Sun, Wrench, X } from "lucide-react";
 import { useModalFocus } from "../../hooks/use-modal-focus";
 import { Button } from "../../components/ui/button";
 import { Card, CardBody } from "../../components/ui/card";
@@ -114,21 +114,28 @@ function ModelCard({
           ) : null}
         </span>
         <span className="share-model-card-limits">
-          {info?.contextLength != null ? (
-            `${formatModelTokens(info.contextLength)} ctx`
-          ) : (
-            <span title={UNKNOWN_LIMITS_TOOLTIP} className="is-unknown">
-              n/a ctx
-            </span>
-          )}
-          {" · "}
-          {info?.maxOutputTokens != null ? (
-            `${formatModelTokens(info.maxOutputTokens)} out`
-          ) : (
-            <span title={UNKNOWN_LIMITS_TOOLTIP} className="is-unknown">
-              n/a out
-            </span>
-          )}
+          {/* Input and output are separate labelled chips: a single grey run of
+              text left the context window reading as absent next to `out`. */}
+          <span title="Context window (input tokens)">
+            <ArrowDownToLine size={12} aria-hidden="true" />
+            {info?.contextLength != null ? (
+              `${formatModelTokens(info.contextLength)} in`
+            ) : (
+              <span title={UNKNOWN_LIMITS_TOOLTIP} className="is-unknown">
+                n/a in
+              </span>
+            )}
+          </span>
+          <span title="Maximum output tokens">
+            <ArrowUpFromLine size={12} aria-hidden="true" />
+            {info?.maxOutputTokens != null ? (
+              `${formatModelTokens(info.maxOutputTokens)} out`
+            ) : (
+              <span title={UNKNOWN_LIMITS_TOOLTIP} className="is-unknown">
+                n/a out
+              </span>
+            )}
+          </span>
         </span>
       </div>
       {result ? (
