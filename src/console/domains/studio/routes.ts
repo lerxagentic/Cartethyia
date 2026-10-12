@@ -37,7 +37,10 @@ export interface StudioConfig {
   readonly webFetch?: (tenantId: string) => ValidatedFetch;
   readonly auditSink?: AuditSink;
 }
-const MAX_WEB_CHARS = 24_000;
+// 60k chars is roughly 15k tokens of page text: enough for a long documentation
+// page or a spec, while still bounded so a single fetch cannot crowd out the
+// conversation it is meant to inform.
+const MAX_WEB_CHARS = 60_000;
 const WEB_TIMEOUT_MS = 15_000;
 
 function webUrl(value: unknown): URL {

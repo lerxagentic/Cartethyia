@@ -69,7 +69,7 @@ import {
   readFileAsDataURL,
 } from "../components/studio/attachments";
 import { Markdown } from "../components/studio/markdown";
-import { Avatar, CopyButton, MessageMeta, Thinking, ToolChips } from "../components/studio/message-parts";
+import { Avatar, CopyButton, LiveToolCalls, MessageMeta, Thinking, ToolChips } from "../components/studio/message-parts";
 
 const THINK_LEVELS = [
   { value: "auto", label: "Auto" },
@@ -381,6 +381,11 @@ export default function ModelLab(): ReactNode {
   const [live, setLive] = useState<ChatStreamAccumulator | null>(null);
   const [pendingUser, setPendingUser] = useState<PendingUser | null>(null);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
+  /** Tool calls of the turn in flight, so the user sees arguments and results
+   *  as they happen instead of only after the turn is persisted. */
+  const [liveToolCalls, setLiveToolCalls] = useState<
+    Array<{ name: string; args: string; result?: string; running: boolean }>
+  >([]);
   const [chatError, setChatError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [tuneOpen, setTuneOpen] = useState(false);
@@ -850,7 +855,11 @@ export default function ModelLab(): ReactNode {
       });
       const roundCalls: Array<{ name: string; args: string; result: string }> = [];
       for (const call of acc.toolCalls) {
-        setToolStatus(`running ${call.name ?? "tool"}…`);
+        const callName = call.name ?? "tool";
+        setToolStatus(`running ${callName}…`);
+        // Show the call the moment it starts, with no result yet, so the model's
+        // chosen arguments are visible while the tool runs.
+        setLiveToolCalls((prev) => [...prev, { name: callName, args: call.args, running: true }]);
         const result = await executeStudioToolAsync(
           call.name ?? "",
           call.args,
@@ -858,6 +867,17 @@ export default function ModelLab(): ReactNode {
           allowWebTools,
           key,
         );
+        setLiveToolCalls((prev) => {
+          const next = [...prev];
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            const entry = next[i];
+            if (entry && entry.name === callName && entry.running) {
+              next[i] = { name: entry.name, args: entry.args, result, running: false };
+              break;
+            }
+          }
+          return next;
+        });
         const displayCall = { name: call.name ?? "unknown", args: call.args, result };
         displayCalls.push(displayCall);
         roundCalls.push(displayCall);
@@ -923,6 +943,7 @@ export default function ModelLab(): ReactNode {
       if (!active) return;
       setChatError(null);
       setToolStatus(null);
+      setLiveToolCalls([]);
       setComposer("");
       const outgoing = attachments;
       setAttachments([]);
@@ -979,6 +1000,9 @@ export default function ModelLab(): ReactNode {
         liveRef.current = null;
         setLive(null);
         setToolStatus(null);
+        // Keep the tool cards visible until the persisted message takes over, so
+        // the results do not flicker away at the moment the turn ends.
+        setLiveToolCalls([]);
         setSending(false);
       }
     } finally {
@@ -1322,6 +1346,7 @@ export default function ModelLab(): ReactNode {
                           ) : null}
                         </div>
                         <Thinking reasoning={live.reasoning} streaming={sending} />
+                        <LiveToolCalls calls={liveToolCalls} />
                         <div style={{ fontSize: "13.5px", lineHeight: 1.65 }}>
                           {live.text ? (
                             <Markdown text={live.text} />

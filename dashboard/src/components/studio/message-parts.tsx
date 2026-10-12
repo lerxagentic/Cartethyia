@@ -113,28 +113,112 @@ export function ToolChips({ message }: { message: StudioMessage }): ReactNode {
       {open ? (
         <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "6px" }}>
           {calls.map((call, index) => (
-            <div
-              key={`${call.name}-${index}`}
-              style={{
-                border: "1px solid var(--inner-border)",
-                borderRadius: "8px",
-                background: "var(--code-surface)",
-                padding: "8px 10px",
-                fontFamily: "var(--font-mono)",
-                fontSize: "11px",
-              }}
-            >
-              <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>{call.name}</div>
-              <div style={{ color: "var(--text-secondary)", wordBreak: "break-all" }}>
-                → {call.args}
-              </div>
-              <div style={{ color: "var(--status-success)", wordBreak: "break-all" }}>
-                ← {call.result}
-              </div>
-            </div>
+            <ToolCallCard key={`${call.name}-${index}`} call={call} />
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** One tool call: name, arguments, and the result.
+ *
+ * Long results are collapsed to a scrollable block rather than dumped inline —
+ * a `web_fetch` can return tens of thousands of characters, and rendering that
+ * unbounded would push the conversation off screen. */
+function ToolCallCard({
+  call,
+}: {
+  call: { name: string; args: string; result: string };
+}): ReactNode {
+  const [expanded, setExpanded] = useState(false);
+  const RESULT_PREVIEW = 400;
+  const long = call.result.length > RESULT_PREVIEW;
+  const shown = !long || expanded ? call.result : `${call.result.slice(0, RESULT_PREVIEW)}…`;
+  const failed = /"error"\s*:/.test(call.result);
+  return (
+    <div
+      style={{
+        border: "1px solid var(--inner-border)",
+        borderRadius: "8px",
+        background: "var(--code-surface)",
+        padding: "8px 10px",
+        fontFamily: "var(--font-mono)",
+        fontSize: "11px",
+      }}
+    >
+      <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>{call.name}</div>
+      <div style={{ color: "var(--text-secondary)", wordBreak: "break-all" }}>→ {call.args}</div>
+      <div
+        style={{
+          color: failed ? "var(--status-danger, #ef4444)" : "var(--status-success)",
+          wordBreak: "break-all",
+          whiteSpace: "pre-wrap",
+          maxHeight: expanded ? "40vh" : undefined,
+          overflowY: expanded && long ? "auto" : undefined,
+        }}
+      >
+        ← {shown}
+      </div>
+      {long ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          style={{
+            marginTop: "4px",
+            background: "none",
+            border: "none",
+            padding: 0,
+            color: "var(--accent)",
+            fontSize: "10px",
+            cursor: "pointer",
+          }}
+        >
+          {expanded ? "show less" : `show all ${call.result.length} chars`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Live view of tool calls while a turn is still streaming.
+ *
+ * The transcript only gets its tool cards once the turn finishes, so without
+ * this the user watches "running web_search…" with no sight of the arguments the
+ * model chose or the result coming back. This renders each call as it starts and
+ * updates in place as its result lands. */
+export function LiveToolCalls({
+  calls,
+}: {
+  calls: readonly { name: string; args: string; result?: string; running: boolean }[];
+}): ReactNode {
+  if (calls.length === 0) return null;
+  return (
+    <div style={{ marginBottom: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+      {calls.map((call, index) => (
+        <div
+          key={`${call.name}-${index}`}
+          style={{
+            border: "1px solid var(--inner-border)",
+            borderRadius: "8px",
+            background: "var(--code-surface)",
+            padding: "8px 10px",
+            fontFamily: "var(--font-mono)",
+            fontSize: "11px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 700, color: "var(--text-primary)" }}>
+            {call.running ? <span className="mlab-live-dot" /> : <Check size={11} />}
+            {call.name}
+          </div>
+          <div style={{ color: "var(--text-secondary)", wordBreak: "break-all" }}>→ {call.args}</div>
+          {call.result !== undefined ? (
+            <div style={{ color: "var(--status-success)", wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
+              ← {call.result.length > 400 ? `${call.result.slice(0, 400)}…` : call.result}
+            </div>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }

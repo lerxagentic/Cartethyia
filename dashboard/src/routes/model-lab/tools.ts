@@ -24,7 +24,7 @@ export const STUDIO_TOOLS = [
       type: "object",
       properties: {
         url: { type: "string", description: "An absolute HTTP or HTTPS URL" },
-        maxChars: { type: "integer", minimum: 1000, maximum: 24000 },
+        maxChars: { type: "integer", minimum: 1000, maximum: 60000 },
       },
       required: ["url"],
     },
@@ -109,7 +109,7 @@ export const STUDIO_TOOLS = [
   },
 ] as const;
 
-export const MAX_TOOL_TURNS = 5;
+export const MAX_TOOL_TURNS = 12;
 
 /** Tools that reach the network. They are opt-in per prompt, never armed by
  *  default, so a generic question cannot silently trigger a fetch or a search. */
@@ -399,13 +399,14 @@ interface SearchHit {
   readonly content?: string;
 }
 
-/** The search provider the Studio key should route through.
+/** Search models to try, in order.
  *
  * The gateway's `/v1/search` route resolves a `model` through the same routing
- * engine as chat, so an alias or combo of search providers works too. The
- * default names a plain search model; when no search provider is configured the
- * route answers 503 and the model is told to fall back on what it knows. */
-const SEARCH_MODEL = "brave-search";
+ * engine as chat. Each id below is one provider's search model, and a provider
+ * with no credential answers "no eligible search route" — so the chain is tried
+ * in turn rather than pinning one provider. That way a deployment with only Exa
+ * configured still gets search instead of a hard failure naming Brave. */
+const SEARCH_MODEL_CHAIN = ["brave-search", "exa-search", "tavily-search"] as const;
 
 /** Runs a web search through the gateway's native `/v1/search` route.
  *
@@ -422,20 +423,34 @@ async function runWebSearch(
     typeof maxResults === "number" && Number.isFinite(maxResults)
       ? Math.max(1, Math.min(10, Math.floor(maxResults)))
       : 5;
-  const body = { model: SEARCH_MODEL, query, max_results: count };
-  try {
-    if (!studioKey) return JSON.stringify({ error: "no gateway key available for search" });
-    const response = await fetch("/v1/search", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${studioKey}`,
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
+  if (!studioKey) return JSON.stringify({ error: "no gateway key available for search" });
+
+  let lastError: unknown = "no search provider configured";
+  for (const model of SEARCH_MODEL_CHAIN) {
+    let response: Response;
+    try {
+      response = await fetch("/v1/search", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${studioKey}`,
+        },
+        body: JSON.stringify({ model, query, max_results: count }),
+        signal,
+      });
+    } catch (error) {
+      // A transport failure (or the caller's abort) is not "try the next
+      // provider": the request never landed, so surface it.
+      return JSON.stringify({ error: error instanceof Error ? error.message : "web search request failed" });
+    }
     const payload: unknown = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-    if (!response.ok) return JSON.stringify({ error: payload });
+    if (!response.ok) {
+      lastError = payload;
+      // Only a routing/admission miss is worth another provider. A 400 means the
+      // request itself is wrong and would fail identically everywhere.
+      if (response.status !== 503 && response.status !== 404) break;
+      continue;
+    }
     // The route returns a normalized envelope; surface only the fields a model
     // can use, so a provider's raw payload never floods the context.
     const results = (isRecord(payload) && Array.isArray(payload.results) ? payload.results : [])
@@ -445,8 +460,7 @@ async function runWebSearch(
         url: hit.url ?? "",
         snippet: (hit.snippet ?? hit.content ?? "").slice(0, 500),
       }));
-    return JSON.stringify({ query, results });
-  } catch (error) {
-    return JSON.stringify({ error: error instanceof Error ? error.message : "web search request failed" });
+    return JSON.stringify({ query, provider: model, results });
   }
+  return JSON.stringify({ error: lastError });
 }

@@ -18,6 +18,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   LOCAL_TOOL_DEFS,
+  MAX_TOOL_TURNS,
   TOOL_DEFS,
   evaluateArithmetic,
   executeStudioTool,
@@ -120,6 +121,12 @@ describe("studio tool gating", () => {
     // Sandbox and pure-local tools stay available.
     expect(names).toContain("run_javascript");
     expect(names).toContain("calculate");
+  });
+
+  test("the turn budget allows a multi-step coding loop", () => {
+    // A read → compute → fix → verify cycle needs more than a chat-sized budget;
+    // five turns ran out mid-task.
+    expect(MAX_TOOL_TURNS).toBeGreaterThanOrEqual(10);
   });
 
   test("the full set contains every declared tool", () => {

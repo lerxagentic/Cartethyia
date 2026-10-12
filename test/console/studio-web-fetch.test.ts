@@ -95,14 +95,14 @@ describe("studio web_fetch", () => {
   });
 
   test("clamps the character cap to the server ceiling", async () => {
-    const huge = "<p>" + "x".repeat(60_000) + "</p>";
+    const huge = "<p>" + "x".repeat(200_000) + "</p>";
     const ops = opsWith(factoryOf(stubFetch({ body: huge })));
     const result = (await ops.webFetch(access, "https://example.com", 10_000_000)) as {
       content: string;
       truncated: boolean;
     };
-    // Ceiling is 24k, so a 60k page is cut down and flagged.
-    expect(result.content.length).toBeLessThanOrEqual(24_000);
+    // Ceiling is 60k, so a 200k page is cut down and flagged.
+    expect(result.content.length).toBeLessThanOrEqual(60_000);
     expect(result.truncated).toBe(true);
   });
 
