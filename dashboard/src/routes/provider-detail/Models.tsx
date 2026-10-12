@@ -627,7 +627,10 @@ function ModelCard({
               separate chips. `in`/`out` alone was too terse — the context
               window read as if it were a different metric rather than the
               model's input limit — so each chip states what it is: `context`
-              for the input ceiling, `output` for the max output. */}
+              for the input ceiling, `output` for the max output. The numbers
+              stay muted grey: this is reference metadata, not a value to
+              compete with the model name, and the coloured icons already
+              separate the two. */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: "10px", whiteSpace: "nowrap" }}>
             <span
               style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}
@@ -635,7 +638,7 @@ function ModelCard({
             >
               <ArrowDownToLine size={12} style={{ color: "var(--status-info)", flexShrink: 0 }} />
               {model.contextLimit ? (
-                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                <span style={{ color: "var(--text-secondary)" }}>
                   {formatModelTokens(model.contextLimit)} context
                 </span>
               ) : (
@@ -650,7 +653,7 @@ function ModelCard({
             >
               <ArrowUpFromLine size={12} style={{ color: "var(--orange)", flexShrink: 0 }} />
               {model.outputLimit ? (
-                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                <span style={{ color: "var(--text-secondary)" }}>
                   {formatModelTokens(model.outputLimit)} output
                 </span>
               ) : (

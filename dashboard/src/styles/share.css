@@ -590,6 +590,9 @@ html[data-app="share"] .share-hud-card {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  /* Muted grey: reference metadata, not a value competing with the model
+     name. The coloured icons distinguish context from output. */
+  color: var(--text-secondary);
 }
 
 /* Each limit is its own chip so the context window stays legible beside the
