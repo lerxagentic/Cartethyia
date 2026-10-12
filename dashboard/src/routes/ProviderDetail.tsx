@@ -28,7 +28,6 @@ import { Inline } from "../components/ui/inline";
 import { Stack } from "../components/ui/stack";
 import {
   useProbeAllProviderAccounts,
-  useProbeAllProviderModels,
   useProviderAccounts,
   useProviderModels,
   useProviders,
@@ -38,7 +37,7 @@ import {
 } from "../hooks/providers";
 import { queryKeys } from "../data/query-keys";
 import { toast } from "../shared/toast";
-import type { ProviderAccountResponse } from "../data/contracts";
+import type { ProbeModelResult, ProviderAccountResponse } from "../data/contracts";
 import { providerCanConfigureUserAgent } from "../shared/provider-user-agent";
 import { RoutingStrategyCard } from "./provider-detail/RoutingStrategyCard";
 import { CredentialNotice } from "./provider-detail/CredentialNotice";
@@ -71,7 +70,7 @@ export default function ProviderDetail(): ReactNode {
   const quotaWindows = providerQuota?.windows ?? null;
   const syncModels = useSyncProviderModels();
   const autoSyncModels = useSyncProviderModels({ silent: true });
-  const probeAllModels = useProbeAllProviderModels();
+  const [isTestingAllModels, setIsTestingAllModels] = useState(false);
   const [modelProbeResults, setModelProbeResults] = useState<ReadonlyMap<string, { ok: boolean; latencyMs: number }>>(() => new Map());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const probeAllAccounts = useProbeAllProviderAccounts();
@@ -489,36 +488,68 @@ export default function ProviderDetail(): ReactNode {
                 variant="secondary"
                 size="sm"
                 icon={
-                  probeAllModels.isPending ? (
+                  isTestingAllModels ? (
                     <Loader2 size={13} className="animate-spin" />
                   ) : (
                     <FlaskConical size={13} />
                   )
                 }
-                disabled={probeAllModels.isPending || models.length === 0}
-                onClick={() => {
-                  probeAllModels.mutate(id, {
-                    onSuccess: (data) => {
-                      const newMap = new Map<string, { ok: boolean; latencyMs: number }>();
-                      let successCount = 0;
-                      for (const r of data.results) {
-                        newMap.set(r.modelId, { ok: r.ok, latencyMs: r.latencyMs });
-                        if (r.ok) successCount += 1;
-                      }
-                      setModelProbeResults(new Map(newMap));
-                      toast.success(
-                        "Test all models finished",
-                        `${successCount}/${data.results.length} model aktif & siap digunakan`,
+                disabled={isTestingAllModels || models.length === 0}
+                onClick={async () => {
+                  const targetModels = models.filter((m) => m.enabled !== false);
+                  if (targetModels.length === 0) return;
+
+                  setIsTestingAllModels(true);
+                  let successCount = 0;
+                  const CONCURRENCY = 4;
+
+                  try {
+                    for (let i = 0; i < targetModels.length; i += CONCURRENCY) {
+                      const chunk = targetModels.slice(i, i + CONCURRENCY);
+                      await Promise.allSettled(
+                        chunk.map(async (m) => {
+                          try {
+                            const res = await consoleRequest<ProbeModelResult>(
+                              `/providers/${encodeURIComponent(id)}/models/probe`,
+                              {
+                                method: "POST",
+                                body: JSON.stringify({
+                                  modelId: m.modelId,
+                                  route: m.route,
+                                  reasoningEffort: thinkingEffort,
+                                }),
+                              },
+                            );
+                            if (res.ok) successCount += 1;
+                            setModelProbeResults((prev) => {
+                              const next = new Map(prev);
+                              next.set(m.modelId, { ok: res.ok, latencyMs: res.latencyMs });
+                              return next;
+                            });
+                          } catch {
+                            setModelProbeResults((prev) => {
+                              const next = new Map(prev);
+                              next.set(m.modelId, { ok: false, latencyMs: 0 });
+                              return next;
+                            });
+                          }
+                        }),
                       );
-                    },
-                    onError: (err) => {
-                      toast.error("Failed to test models", err.message || "Unknown error");
-                    },
-                  });
+                    }
+
+                    toast.success(
+                      "Test all models finished",
+                      `${successCount}/${targetModels.length} model aktif & siap digunakan`,
+                    );
+                  } catch (err: any) {
+                    toast.error("Test models error", err?.message || "Unknown error");
+                  } finally {
+                    setIsTestingAllModels(false);
+                  }
                 }}
                 title="Test semua model secara bersamaan untuk mengecek status aktif & latensi"
               >
-                {probeAllModels.isPending ? "Testing all..." : "Test all models"}
+                {isTestingAllModels ? "Testing all..." : "Test all models"}
               </Button>
               <Button
                 variant="secondary"
@@ -598,7 +629,7 @@ export default function ProviderDetail(): ReactNode {
               freeAccess={freeAccess}
               quotaWindows={quotaWindows}
               batchProbeResults={modelProbeResults}
-              isTestingAll={probeAllModels.isPending}
+              isTestingAll={isTestingAllModels}
             />
           )}
         </CardBody>
