@@ -167,8 +167,19 @@ class GeminiAdapter implements ProviderAdapter {
           state.stopped = true;
         }
       }
-      const stopMap: Record<string, CanonicalStopReason> = { MAX_TOKENS: "length", STOP: "stop", SAFETY: "content_filter" };
-      const stopReason: CanonicalStopReason = finishReason ? (stopMap[finishReason] ?? (outputCalls > 0 ? "tool_use" : "stop")) : outputCalls > 0 ? "tool_use" : "stop";
+      // A pending tool call outranks the provider's own reason: Gemini reports
+      // `STOP` on the same turn it returns `functionCall` parts, so mapping
+      // `STOP -> "stop"` first told the client the turn was a finished answer and
+      // the tool loop never ran. Only a hard length stop wins over a tool call.
+      const stopMap: Record<string, CanonicalStopReason> = { SAFETY: "content_filter" };
+      const stopReason: CanonicalStopReason =
+        finishReason === "MAX_TOKENS"
+          ? "length"
+          : outputCalls > 0
+            ? "tool_use"
+            : finishReason
+              ? (stopMap[finishReason] ?? "stop")
+              : "stop";
       // No finishReason means the stream ended without a terminal chunk:
       // truncated, never complete.
       const truncated = finishReason === undefined;

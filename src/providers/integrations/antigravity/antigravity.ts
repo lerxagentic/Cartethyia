@@ -426,17 +426,25 @@ class AntigravityAdapter implements ProviderAdapter {
   }
 }
 
-function toCanonicalStop(
+export function toCanonicalStop(
   finishReason: string | undefined,
   toolCount: number,
 ): CanonicalStopReason {
+  // A tool call wins over the provider's own reason. Antigravity reports `STOP`
+  // on the same turn it emits `functionCall` parts, so mapping `STOP -> "stop"`
+  // first told the client the turn was a finished answer — the tool loop then
+  // never ran and the Model Lab showed "(no visible output)" while the model had
+  // in fact asked for `web_search`. The stop reason describes why the *stream*
+  // ended; a pending tool call is what the caller must act on, so it takes
+  // precedence over every mapped reason except a hard failure.
+  if (finishReason === "MAX_TOKENS") return "length";
+  if (toolCount > 0) return "tool_use";
   const map: Record<string, CanonicalStopReason> = {
-    MAX_TOKENS: "length",
     STOP: "stop",
     SAFETY: "content_filter",
   };
   if (finishReason && map[finishReason]) return map[finishReason]!;
-  return toolCount > 0 ? "tool_use" : "stop";
+  return "stop";
 }
 
 /**
