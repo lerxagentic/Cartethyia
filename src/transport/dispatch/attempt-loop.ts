@@ -29,6 +29,8 @@ import { flagPoolCooldown } from "../../network/pool-health";
 import { completeAttempt, estimatedUsage, type ProviderExchangeCapture } from "./attempt-finalize";
 import { repriceUsage } from "../../providers/usage";
 import { shouldCooldownPool, isOAuthCredentialInvalidated } from "./retry-policy";
+import { classifyUpstreamFailure } from "../failure-policy";
+import { recordProviderFailure, recordProviderSuccess } from "../routing/provider-circuit";
 import { drainAbortReason } from "../shutdown-notice";
 import { pushStructuredConsoleLog } from "../../observability/log-ring";
 
@@ -168,7 +170,7 @@ export async function runAttemptLoop<TResult, TAdapter>(
         ...(networkPoolId ? { networkPoolId } : {}),
         ...(state.clientIdentity ? { clientIp: state.clientIdentity.address } : {}),
       });
-      return await input.attempt({
+      const result = await input.attempt({
         candidate,
         credential,
         adapter,
@@ -179,6 +181,11 @@ export async function runAttemptLoop<TResult, TAdapter>(
           leasesRetained = true;
         },
       });
+      // Reaching here means the provider answered: close its circuit. This is
+      // the probe that makes recovery immediate rather than depending on an
+      // arbitrary number of further successes.
+      recordProviderSuccess(candidate.provider_id);
+      return result;
     } catch (error) {
       // A drain aborts the controller, so a mid-flight attempt unwinds here as
       // an abort. Surface the typed shutdown error (503 shutting_down /
@@ -243,6 +250,22 @@ export async function runAttemptLoop<TResult, TAdapter>(
       });
       if (networkPoolId && !cancelled && deps.poolSelector && shouldCooldownPool(error, candidate.provider_id)) {
         flagPoolCooldown(deps.poolSelector, deps.db, networkPoolId, candidate.provider_id, error);
+      }
+      // Per-provider breaker: only a *provider-scoped* failure counts. A
+      // network-origin error is our own egress (not the provider's fault) and an
+      // account-scoped error is already handled by the account machinery;
+      // counting either would trip the breaker on a problem the provider does
+      // not have. `cancelled` is excluded because a client abort says nothing
+      // about the upstream.
+      if (!cancelled && classifyUpstreamFailure(error).scope === "provider") {
+        if (recordProviderFailure(candidate.provider_id)) {
+          pushStructuredConsoleLog("warn", "Provider circuit opened", {
+            event: "provider_circuit_open",
+            requestId: state.requestId,
+            providerId: candidate.provider_id,
+            model: candidate.model_id,
+          });
+        }
       }
       // A 403 can be a deterministic provider policy rejection, not an
       // invalid OAuth credential. Only the evidence-based classifier above

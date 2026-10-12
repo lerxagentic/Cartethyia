@@ -21,6 +21,7 @@ import {
   type RoutingRevision,
 } from "./route-model";
 import { candidateSupportsRequest, type RequiredCapability } from "../translation/capabilities";
+import { isProviderCircuitOpen } from "./provider-circuit";
 
 
 /**
@@ -647,6 +648,21 @@ export class RoutingEngine {
         throw capabilityUnsupportedError(requiredCapabilities.join(", "));
     }
     eligible = this.applyProviderRouting(eligible, snapshot, tid);
+    // Per-provider breaker: a provider whose circuit is open is tried after
+    // every provider that is not. This is the same shape as the cooling rule
+    // above and for the same reason — deprioritized, never excluded, so a
+    // deployment whose only provider is mid-outage still serves rather than
+    // failing outright. Placed after `applyProviderRouting` for the same
+    // rotation-blindness reason the cooling re-assert handles.
+    const tripped = new Set(
+      eligible.filter((candidate) => isProviderCircuitOpen(candidate.provider_id)).map((c) => c.provider_id),
+    );
+    if (tripped.size > 0 && tripped.size < new Set(eligible.map((c) => c.provider_id)).size) {
+      eligible = [
+        ...eligible.filter((candidate) => !tripped.has(candidate.provider_id)),
+        ...eligible.filter((candidate) => tripped.has(candidate.provider_id)),
+      ];
+    }
     // Re-assert the cooling order: `applyProviderRouting` rotates accounts
     // within one `provider::model` run, and that rotation is by design blind to
     // health — so it can float a cooling account back to the front and undo the

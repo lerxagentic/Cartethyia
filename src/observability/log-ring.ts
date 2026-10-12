@@ -19,7 +19,8 @@ export interface ConsoleLogLine {
     | "request_dispatch"
     | "request_complete"
     | "request_error"
-    | "token_refresh";
+    | "token_refresh"
+    | "provider_circuit_open";
   readonly requestId?: string;
   readonly endpoint?: string;
   readonly method?: string;

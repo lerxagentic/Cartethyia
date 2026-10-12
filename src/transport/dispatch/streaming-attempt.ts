@@ -48,6 +48,8 @@ import { releaseAttemptLeases } from "./leases";
 import { proxySuccessHeaders, buildUpstreamDispatchContext } from "./upstream";
 import { createDispatchStreamEncoder } from "./stream-bridge";
 import { shouldCooldownPool } from "./retry-policy";
+import { classifyUpstreamFailure } from "../failure-policy";
+import { recordProviderFailure, recordProviderSuccess } from "../routing/provider-circuit";
 import { metrics } from "../../observability/metrics";
 import { flagPoolCooldown } from "../../network/pool-health";
 import { resolveStreamFirstChunkTimeoutMs, resolveStreamStallTimeoutMs, resolveUpstreamTimeoutMs } from "../../config";
@@ -740,6 +742,10 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
       metrics.proxy_requests_total.inc(1, {
         status: upstreamTruncated ? "truncated" : "completed",
       });
+      // A completed stream is proof the provider is answering: close its
+      // circuit, mirroring the non-streaming path. `truncated` also closes it —
+      // the provider did produce a stream, so it is reachable.
+      recordProviderSuccess(streamProviderId);
       controller.close();
     } catch (err) {
       await emitStreamErrorAndClose(err, controller);
@@ -808,6 +814,12 @@ export async function dispatchStreamingAttempt(input: StreamingDispatchInput): P
     streamSettled = true;
     if (streamNetworkPoolId && !cancelled && deps.poolSelector && shouldCooldownPool(err, streamProviderId)) {
       flagPoolCooldown(deps.poolSelector, deps.db, streamNetworkPoolId, streamProviderId, err);
+    }
+    // Per-provider breaker on the streaming path too: without this, a provider
+    // that only ever fails mid-stream would never trip, and the breaker would
+    // be blind to exactly the failure mode streaming clients hit most.
+    if (!cancelled && classifyUpstreamFailure(err).scope === "provider") {
+      recordProviderFailure(streamProviderId);
     }
     if (!cancelled) metrics.proxy_requests_total.inc(1, { status: "failed" });
     else metrics.proxy_requests_total.inc(1, { status: "cancelled" });
