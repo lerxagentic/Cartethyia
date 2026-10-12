@@ -1,12 +1,31 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { toast } from "../../shared/toast";
 import { useClipboard } from "../../hooks/use-clipboard";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { ChartBlock } from "./ChartBlock";
+
+/** KaTeX's stylesheet is ~23 kB and matters only when a message contains math,
+ *  so it is imported on first use instead of shipping in the console's main
+ *  bundle. The promise is memoised at module scope: the second formula in a
+ *  session costs nothing. */
+let katexCssPromise: Promise<unknown> | undefined;
+function ensureKatexCss(): void {
+  katexCssPromise ??= import("katex/dist/katex.min.css");
+}
+
+/** Whether a message contains anything remark-math will treat as math.
+ *
+ * Deliberately mirrors remark-math's own rules rather than a loose "contains a
+ * dollar sign" test: a message quoting a price must not pull in KaTeX. Inline
+ * math needs a non-space right after the opening `$` and a non-space before the
+ * closing one, so "harga $10 dan $20" is left as text — only `$10^5$` matches. */
+const MATH_PATTERN = /\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?(?<!\s)\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/;
 
 function CodeBlock({ children }: { children?: ReactNode }): ReactNode {
   const ref = useRef<HTMLPreElement | null>(null);
@@ -53,9 +72,18 @@ function CodeBlock({ children }: { children?: ReactNode }): ReactNode {
 }
 
 export function Markdown({ text }: { text: string }): ReactNode {
+  // Only pay for the math pipeline when the message actually has math. The
+  // plugins themselves are cheap to pass, but KaTeX's CSS is not, so it is
+  // fetched on first sight of a formula rather than on first message.
+  const hasMath = MATH_PATTERN.test(text);
+  useEffect(() => {
+    if (hasMath) ensureKatexCss();
+  }, [hasMath]);
+
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       components={{
         a: ({ node, ...props }) => (
           <a {...props} target="_blank" rel="noreferrer" style={{ color: "var(--status-info)" }} />
