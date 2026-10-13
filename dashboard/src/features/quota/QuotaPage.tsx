@@ -355,8 +355,8 @@ function QuotaCard({
         <ProviderIcon icon={account.providerIcon} name={account.providerName} size={32} />
         <div className="min-w-0 flex-1" style={{ minWidth: "160px", flex: "1 1 160px" }}>
           <div
-            className="flex min-w-0 items-center gap-2"
-            style={{ display: "flex", alignItems: "center", gap: "8px" }}
+            className="flex min-w-0 items-center gap-2 flex-wrap"
+            style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}
           >
             <div
               className="truncate text-sm font-bold"
@@ -378,44 +378,59 @@ function QuotaCard({
                   fontWeight: 600,
                   background: "var(--accent-soft)",
                   color: "var(--accent)",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
                 }}
-                title={(() => {
-                  const monthly = quota.windows?.find((w) => w.label.toLowerCase() === "monthly");
-                  const resetsAt = monthly?.resetsAt ?? quota.windows?.find((w) => Boolean(w.resetsAt))?.resetsAt;
-                  if (!resetsAt) return `Plan: ${quota.plan}`;
-                  const dt = new Date(resetsAt);
-                  return Number.isFinite(dt.getTime())
-                    ? `Plan: ${quota.plan} · Berlaku/Reset hingga ${dt.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`
-                    : `Plan: ${quota.plan}`;
-                })()}
               >
-                <span>{quota.plan}</span>
-                {(() => {
-                  const monthly = quota.windows?.find((w) => w.label.toLowerCase() === "monthly");
-                  const resetsAt = monthly?.resetsAt ?? quota.windows?.find((w) => Boolean(w.resetsAt))?.resetsAt;
-                  if (!resetsAt) return null;
-                  const dt = new Date(resetsAt);
-                  if (!Number.isFinite(dt.getTime())) return null;
-                  const formatted = dt.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
-                  return (
-                    <span
-                      style={{
-                        fontSize: "9px",
-                        opacity: 0.85,
-                        borderLeft: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
-                        paddingLeft: "4px",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      until {formatted}
-                    </span>
-                  );
-                })()}
+                {quota.plan}
               </span>
             )}
+            {(() => {
+              // Menghitung tanggal kedaluwarsa akhir paket nyata (Active Package Expiration)
+              // 1. Cek paket non-recurring (Bonus Pack / Addon grant) terjauh yang masih aktif
+              const validNonRecurring = quota?.windows?.filter(
+                (w) => w.recurring === false && Boolean(w.resetsAt) && (w.remainingPercent === null || w.remainingPercent > 0)
+              ) ?? [];
+              
+              let farthestEnd: Date | null = null;
+              for (const w of validNonRecurring) {
+                const d = new Date(w.resetsAt!);
+                if (Number.isFinite(d.getTime())) {
+                  if (!farthestEnd || d.getTime() > farthestEnd.getTime()) {
+                    farthestEnd = d;
+                  }
+                }
+              }
+
+              // 2. Jika tidak ada bonus/addon berbatas waktu, gunakan cycle reset subscription
+              const monthly = quota?.windows?.find((w) => w.label.toLowerCase() === "monthly");
+              const cycleReset = monthly?.resetsAt ? new Date(monthly.resetsAt) : null;
+              const targetDate = farthestEnd ?? (cycleReset && Number.isFinite(cycleReset.getTime()) ? cycleReset : null);
+
+              if (!targetDate) return null;
+              const formatted = targetDate.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+              const isGrant = farthestEnd !== null;
+
+              return (
+                <span
+                  className="shrink-0 rounded-full text-[10px] font-medium"
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: "9999px",
+                    fontSize: "10px",
+                    fontWeight: 600,
+                    color: isGrant ? "var(--teal)" : "var(--text-secondary)",
+                    background: isGrant ? "color-mix(in srgb, var(--teal) 12%, transparent)" : "var(--surface-2)",
+                    border: `1px solid color-mix(in srgb, ${isGrant ? "var(--teal)" : "var(--inner-border)"} 30%, transparent)`,
+                  }}
+                  title={
+                    isGrant
+                      ? `Paket langganan/kredit bonus aktif berakhir pada: ${targetDate.toLocaleString()}`
+                      : `Siklus kuota bulanan berakhir/reset pada: ${targetDate.toLocaleString()}`
+                  }
+                >
+                  {isGrant ? `Active until ${formatted}` : `Cycle resets ${formatted}`}
+                </span>
+              );
+            })()}
             {healthStatus !== "active" ? (
               <Badge
                 tone={
