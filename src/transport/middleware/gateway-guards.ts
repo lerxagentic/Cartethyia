@@ -48,6 +48,28 @@ export function createApiKeyAuthenticationMiddleware(deps: {
     .beforeHandle(async ({ request }) => {
       const pathname = fastPathname(request.url);
       if (!pathname.startsWith("/v1/")) return;
+
+      // Abuse ban & Firewall Lockout: refuse before token lookup or route preparation,
+      // so a banned caller cannot probe valid keys or produce failed authorization attempts.
+      const state = deps.stateStore.get(request);
+      const ip = state?.clientIdentity?.address;
+      if (ip !== undefined) {
+        if (deps.modelStrikes) {
+          const banned = await deps.modelStrikes.check({ ip }).catch(() => false);
+          if (banned) throw modelAbuseBannedError();
+        }
+        // Direct database IP firewall lockout check
+        const lockout = await deps.db
+          .select({ lockedUntil: consoleLockouts.lockedUntil })
+          .from(consoleLockouts)
+          .where(eq(consoleLockouts.ip, ip))
+          .limit(1)
+          .catch(() => []);
+        if (lockout[0]?.lockedUntil && lockout[0].lockedUntil.getTime() > Date.now()) {
+          throw new GatewayError("ip_banned", 403, "This client IP address has been locked out / banned by the administrator.");
+        }
+      }
+
       const token = requestToken(request.headers);
       const authorization = await resolveApiKeyAuthorization(deps.db, token);
       if (!authorization)
@@ -74,29 +96,6 @@ export function createApiKeyAuthenticationMiddleware(deps: {
           "No API invocation access for this client.",
           { reason: "client_router_denied", clientRouter: denied },
         );
-      // Abuse ban & Firewall Lockout: refuse before parse/prepare and before authorization is
-      // recorded, so a banned caller cannot keep producing failed rows. The ban
-      // is keyed on the client address, not the key: one key can be shared by
-      // every recipient of a share link, so refusing the key would punish
-      // callers that did nothing.
-      const state = deps.stateStore.get(request);
-      const ip = state?.clientIdentity?.address;
-      if (ip !== undefined) {
-        if (deps.modelStrikes) {
-          const banned = await deps.modelStrikes.check({ ip }).catch(() => false);
-          if (banned) throw modelAbuseBannedError();
-        }
-        // Direct database IP firewall lockout check
-        const lockout = await deps.db
-          .select({ lockedUntil: consoleLockouts.lockedUntil })
-          .from(consoleLockouts)
-          .where(eq(consoleLockouts.ip, ip))
-          .limit(1)
-          .catch(() => []);
-        if (lockout[0]?.lockedUntil && lockout[0].lockedUntil.getTime() > Date.now()) {
-          throw new GatewayError("ip_banned", 403, "This client IP address has been locked out / banned by the administrator.");
-        }
-      }
       deps.stateStore.require(request).authorization = authorization;
     })
     .as("plugin");
