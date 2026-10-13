@@ -87,6 +87,7 @@ export const navigationGroups: readonly NavGroupDef[] = [
   {
     label: "System",
     items: [
+      { label: "Security & Guard", path: "/security", icon: ShieldAlert },
       { label: "Console Log", path: "/console-log", icon: ScrollText },
       { label: "Settings", path: "/settings", icon: SettingsIcon },
     ],
@@ -108,6 +109,10 @@ const titlesMap: Record<string, { title: string; sub: string }> = {
     sub: "Network pools, SOCKS5/HTTP egress, and dispatch",
   },
   "/console-log": { title: "Console Log", sub: "Live server logs and audit trail" },
+  "/security": {
+    title: "Security & Intrusion Guard",
+    sub: "Real-time incoming request tracking, suspicious IP & User-Agent detection, and IP firewall",
+  },
   "/model-lab": { title: "Model Lab", sub: "Live model playground — chat, thinking, and tools" },
   "/image-lab": {
     title: "Image Lab",

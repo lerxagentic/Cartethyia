@@ -30,6 +30,7 @@ import { createLiveRoutes } from "./observability/live";
 import { createLogRoutes } from "./observability/logs";
 import { createAuditRoutes } from "./domains/audit/contracts";
 import { createModelAbuseRoutes } from "./domains/model-abuse/contracts";
+import { createSecurityRoutes } from "./domains/security/contracts";
 import { DrizzleAuditReadStore } from "./domains/audit/store";
 import { createStudioRoutes } from "./domains/studio/routes";
 import { DrizzleStudioSessionStore } from "./domains/studio/store";
@@ -242,6 +243,11 @@ export function registerConsoleDomains(
   console.use(createLogRoutes({ accessResolver: ctx.accessResolver, auditSink: ctx.auditRecorder }));
   console.use(createPerformanceRoutes({ accessResolver: ctx.accessResolver }));
   console.use(createAuditRoutes({ store: auditReadStore, accessResolver: ctx.accessResolver }));
+  console.use(createSecurityRoutes({
+    db: ctx.db,
+    strikes: ctx.modelStrikes,
+    accessResolver: ctx.accessResolver,
+  }));
   if (ctx.modelStrikes) {
     console.use(createModelAbuseRoutes({
       strikes: ctx.modelStrikes,

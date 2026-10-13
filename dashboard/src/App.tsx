@@ -50,6 +50,7 @@ const Settings = lazyWithRetry(() => import("./routes/Settings"), "settings");
 const CliTools = lazyWithRetry(() => import("./routes/CliTools"), "cli-tools");
 const CliToolDetail = lazyWithRetry(() => import("./routes/CliToolDetail"), "cli-tool-detail");
 const ConsoleLogPage = lazyWithRetry(() => import("./features/logs/ConsoleLogPage"), "console-log");
+const Security = lazyWithRetry(() => import("./features/security/SecurityPage"), "security");
 const Studio = lazyWithRetry(() => import("./routes/Studio"), "studio");
 const ImageLab = lazyWithRetry(() => import("./routes/ImageLab"), "image-lab");
 const Arena = lazyWithRetry(() => import("./routes/Arena"), "arena");
@@ -186,6 +187,7 @@ function ProtectedRoutes(): ReactNode {
           <Route path="/quota" element={<Quota />} />
           <Route path="/proxy" element={<Proxy />} />
           <Route path="/console-log" element={<ConsoleLogPage />} />
+          <Route path="/security" element={<Security />} />
           <Route path="/model-lab" element={<Studio />} />
           <Route path="/image-lab" element={<ImageLab />} />
           <Route path="/arena" element={<Arena />} />
