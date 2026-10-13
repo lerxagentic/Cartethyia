@@ -355,15 +355,16 @@ function QuotaCard({
         <ProviderIcon icon={account.providerIcon} name={account.providerName} size={32} />
         <div className="min-w-0 flex-1" style={{ minWidth: "160px", flex: "1 1 160px" }}>
           <div
-            className="flex min-w-0 items-center gap-2 flex-wrap"
-            style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}
+            className="flex min-w-0 items-center gap-2 flex-nowrap"
+            style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "nowrap" }}
           >
             <div
-              className="truncate text-sm font-bold"
+              className="text-sm font-bold shrink-0"
               style={{
                 fontSize: "13.5px",
                 fontWeight: 700,
                 color: "var(--text-primary)",
+                whiteSpace: "nowrap",
               }}
             >
               {account.providerName}
@@ -372,12 +373,13 @@ function QuotaCard({
               <span
                 className="shrink-0 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]"
                 style={{
-                  padding: "2px 8px",
+                  padding: "1.5px 7px",
                   borderRadius: "9999px",
                   fontSize: "10px",
                   fontWeight: 600,
                   background: "var(--accent-soft)",
                   color: "var(--accent)",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {quota.plan}
@@ -411,14 +413,15 @@ function QuotaCard({
 
               return (
                 <span
-                  className="shrink-0 rounded-full text-[10px] font-medium"
+                  className="shrink-0 rounded-full text-[10px] font-semibold"
                   style={{
-                    padding: "2px 8px",
+                    padding: "1.5px 7px",
                     borderRadius: "9999px",
                     fontSize: "10px",
                     fontWeight: 600,
+                    whiteSpace: "nowrap",
                     color: isGrant ? "var(--teal)" : "var(--text-secondary)",
-                    background: isGrant ? "color-mix(in srgb, var(--teal) 12%, transparent)" : "var(--surface-2)",
+                    background: isGrant ? "color-mix(in srgb, var(--teal) 14%, transparent)" : "var(--surface-2)",
                     border: `1px solid color-mix(in srgb, ${isGrant ? "var(--teal)" : "var(--inner-border)"} 30%, transparent)`,
                   }}
                   title={
