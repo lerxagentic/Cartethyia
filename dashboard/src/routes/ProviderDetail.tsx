@@ -468,22 +468,21 @@ export default function ProviderDetail(): ReactNode {
                 value={thinkingEffort}
                 onChange={setThinkingEffort}
               />
-              {provider?.supportsModelDiscovery !== false ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={
-                    <RefreshCw
-                      size={13}
-                      className={syncModels.isPending || autoSyncModels.isPending ? "animate-spin" : ""}
-                    />
-                  }
-                  disabled={syncModels.isPending || autoSyncModels.isPending}
-                  onClick={() => syncModels.mutate(id)}
-                >
-                  {syncModels.isPending || autoSyncModels.isPending ? "Fetching..." : "Fetch models"}
-                </Button>
-              ) : null}
+              {/* Always display Fetch models button so operator can discover / refresh models */}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={
+                  <RefreshCw
+                    size={13}
+                    className={syncModels.isPending || autoSyncModels.isPending ? "animate-spin" : ""}
+                  />
+                }
+                disabled={syncModels.isPending || autoSyncModels.isPending}
+                onClick={() => syncModels.mutate(id)}
+              >
+                {syncModels.isPending || autoSyncModels.isPending ? "Fetching..." : "Fetch models"}
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
