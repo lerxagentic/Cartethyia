@@ -165,6 +165,32 @@ export function modelFreeBadge(
     return null;
   }
 
+  // Check explicit free naming convention across providers
+  // e.g. "meituan/longcat-2.5-preview:free", "deepseek-v4.1-flash:free", "fledge-alpha-free", etc.
+  const lowerModel = modelId.toLowerCase();
+  const isExplicitFreeModel =
+    lowerModel.endsWith(":free") ||
+    lowerModel.endsWith("-free") ||
+    lowerModel.includes("/free") ||
+    lowerModel.includes("-free-") ||
+    lowerModel.includes(":free:");
+
+  if (isExplicitFreeModel) {
+    const monthlyWindow = quotaWindows?.find((w) => w.label.toLowerCase() === "monthly");
+    const targetDateStr = monthlyWindow?.resetsAt ?? access?.until ?? null;
+    const untilDate = targetDateStr ? new Date(targetDateStr) : null;
+    const formatted =
+      untilDate && Number.isFinite(untilDate.getTime())
+        ? untilDate.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })
+        : null;
+
+    const label = formatted ? `FREE until ${formatted}` : "FREE (0 credit)";
+    const tooltip = formatted
+      ? `Model ini gratis (0 credit / tier free) hingga ${formatted}`
+      : "Model ini gratis (0 credit / tier free) dan tidak memotong kuota paket";
+    return { label, tooltip };
+  }
+
   // Non-buddy: fallback to plan-level badge if free
   if (access) {
     const label = freeAccessBadge(access);
