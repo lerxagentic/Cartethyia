@@ -513,6 +513,8 @@ export function AccountsList({
   const [sortAsc, setSortAsc] = useState(true);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [lastFailedAccountIds, setLastFailedAccountIds] = useState<string[]>([]);
+  const [deleteFailedOpen, setDeleteFailedOpen] = useState(false);
 
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = useMemo(() => {
@@ -594,10 +596,19 @@ export function AccountsList({
     );
     let passed = 0;
     let failed = 0;
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value?.ok) passed += 1;
-      else failed += 1;
-    }
+    const failedIds: string[] = [];
+    results.forEach((result, idx) => {
+      const acc = selectedAccounts[idx];
+      if (result.status === "fulfilled" && result.value?.ok) {
+        passed += 1;
+      } else {
+        failed += 1;
+        if (acc) failedIds.push(acc.id);
+      }
+    });
+
+    setLastFailedAccountIds(failedIds);
+
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
       queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
@@ -606,6 +617,41 @@ export function AccountsList({
     if (failed === 0) toast.success("Test complete", `${passed} passed`);
     else if (passed === 0) toast.error("Test failed", `${failed} account${failed === 1 ? "" : "s"} failed`);
     else toast.error("Test partially failed", `${passed} passed, ${failed} failed`);
+  };
+
+  const deleteFailedAccounts = async () => {
+    if (lastFailedAccountIds.length === 0) return;
+    setBulkBusy(true);
+    const failedSet = new Set(lastFailedAccountIds);
+    const targetAccounts = accounts.filter((a) => failedSet.has(a.id));
+    
+    await Promise.allSettled(
+      targetAccounts.map(async (account) => {
+        const path =
+          account.tenantId === null
+            ? `/global/accounts/${encodeURIComponent(account.id)}`
+            : `/accounts/${encodeURIComponent(account.id)}`;
+        await consoleRequest(path, { method: "DELETE" });
+        queryClient.removeQueries({ queryKey: queryKeys.quota.account(account.id), exact: true });
+      }),
+    );
+
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of lastFailedAccountIds) next.delete(id);
+      return next;
+    });
+    setLastFailedAccountIds([]);
+    setDeleteFailedOpen(false);
+    setBulkBusy(false);
+
+    toast.success("Failed accounts deleted", `Removed ${targetAccounts.length} failed account(s)`);
+
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.providers.accounts(providerId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.providers.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.quota.all }),
+    ]);
   };
 
   const bulkSetActive = (active: boolean) =>
@@ -744,6 +790,18 @@ export function AccountsList({
             <Button size="sm" variant="secondary" icon={<FlaskConical size={12} />} disabled={bulkBusy} onClick={bulkTest}>
               Test
             </Button>
+            {lastFailedAccountIds.length > 0 ? (
+              <Button
+                size="sm"
+                variant="danger"
+                icon={<Trash2 size={12} />}
+                disabled={bulkBusy}
+                onClick={() => setDeleteFailedOpen(true)}
+                title={`Delete ${lastFailedAccountIds.length} failed account(s) from recent test`}
+              >
+                Delete {lastFailedAccountIds.length} Failed
+              </Button>
+            ) : null}
             <Button size="sm" variant="secondary" icon={<RotateCcw size={12} />} disabled={bulkBusy} onClick={bulkRecover}>
               Recover
             </Button>
@@ -759,7 +817,7 @@ export function AccountsList({
             <Button size="sm" variant="danger" icon={<Trash2 size={12} />} disabled={bulkBusy} onClick={() => setBulkDeleteOpen(true)}>
               Delete
             </Button>
-            <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelected(new Set())}>
+            <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => { setSelected(new Set()); setLastFailedAccountIds([]); }}>
               Clear
             </Button>
           </Inline>
@@ -803,6 +861,18 @@ export function AccountsList({
         title={`Delete ${selectedAccounts.length} account${selectedAccounts.length === 1 ? "" : "s"}?`}
         message="This permanently removes the selected accounts and their credentials. This cannot be undone."
         confirmLabel="Delete"
+        danger
+      />
+
+      <ConfirmDialog
+        open={deleteFailedOpen}
+        onClose={() => {
+          if (!bulkBusy) setDeleteFailedOpen(false);
+        }}
+        onConfirm={deleteFailedAccounts}
+        title={`Delete ${lastFailedAccountIds.length} failed account${lastFailedAccountIds.length === 1 ? "" : "s"}?`}
+        message="This permanently removes only the accounts that failed during the recent test run. This cannot be undone."
+        confirmLabel="Delete Failed"
         danger
       />
     </Stack>
