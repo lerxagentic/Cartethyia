@@ -16,6 +16,8 @@ import { createAccessDecision } from "../../security/access-control";
 import { parseCookieValue, SESSION_COOKIE_NAME, isCsrfValid } from "../../security/csrf";
 import type { IpAbuseProtectionService } from "../../security/abuse";
 import { modelAbuseBannedError, type ModelStrikeService } from "../../security/model-abuse";
+import { consoleLockouts } from "../../persistence/schema";
+import { eq } from "drizzle-orm";
 import type { ReadinessCheckResult } from "../../persistence/readiness";
 import { shutdownNotice } from "../shutdown-notice";
 
@@ -72,17 +74,27 @@ export function createApiKeyAuthenticationMiddleware(deps: {
           "No API invocation access for this client.",
           { reason: "client_router_denied", clientRouter: denied },
         );
-      // Abuse ban: refuse before parse/prepare and before authorization is
+      // Abuse ban & Firewall Lockout: refuse before parse/prepare and before authorization is
       // recorded, so a banned caller cannot keep producing failed rows. The ban
       // is keyed on the client address, not the key: one key can be shared by
       // every recipient of a share link, so refusing the key would punish
       // callers that did nothing.
-      if (deps.modelStrikes) {
-        const state = deps.stateStore.get(request);
-        const ip = state?.clientIdentity?.address;
-        if (ip !== undefined) {
+      const state = deps.stateStore.get(request);
+      const ip = state?.clientIdentity?.address;
+      if (ip !== undefined) {
+        if (deps.modelStrikes) {
           const banned = await deps.modelStrikes.check({ ip }).catch(() => false);
           if (banned) throw modelAbuseBannedError();
+        }
+        // Direct database IP firewall lockout check
+        const lockout = await deps.db
+          .select({ lockedUntil: consoleLockouts.lockedUntil })
+          .from(consoleLockouts)
+          .where(eq(consoleLockouts.ip, ip))
+          .limit(1)
+          .catch(() => []);
+        if (lockout[0]?.lockedUntil && lockout[0].lockedUntil.getTime() > Date.now()) {
+          throw new GatewayError("ip_banned", 403, "This client IP address has been locked out / banned by the administrator.");
         }
       }
       deps.stateStore.require(request).authorization = authorization;

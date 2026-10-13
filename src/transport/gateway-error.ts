@@ -45,6 +45,7 @@ export type GatewayErrorCode =
   | "tool_call_loop_detected"
   | "client_router_denied"
   | "model_abuse_banned"
+  | "ip_banned"
   | "shutting_down"
   | "restart_for_update";
 
