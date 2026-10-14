@@ -2,7 +2,7 @@
 import { and, desc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import type { CartethyiaDatabase } from "../../persistence/postgres";
 import { isRecord } from "../../protocol/primitives";
-import { BUDDY_PROVIDER_IDS } from "../provider-metadata";
+import { BUDDY_PROVIDER_IDS, providerRateLimitIsIpScoped } from "../provider-metadata";
 import { healthEvents, providerAccounts } from "../../persistence/schema";
 
 import { parseProviderResetDuration, parseUpstreamBackoff } from "../../transport/failure-policy";
@@ -133,6 +133,15 @@ export interface AccountErrorClassification {
   readonly reason: string;
   readonly retryAt: Date | null;
   readonly mutatesAccount: boolean;
+  /**
+   * True when the deadline came from the upstream (a `Retry-After`/reset header
+   * or a duration stated in the message) rather than from the classifier's own
+   * fallback. Only a *stated* deadline is the upstream's verdict about a
+   * specific (account, model) pair; an unstated one is the classifier guessing.
+   * `persistAccountFailure` reads this to decide whether a throttle may take
+   * the hard, model-scoped exclusion.
+   */
+  readonly deadlineStated: boolean;
 }
 
 
@@ -175,6 +184,12 @@ export function classifyAccountError(
     parseUpstreamBackoff({ get: getHeader });
   const messageCooldown = parseProviderResetDuration(message);
   const reason = (prefix: string): string => `${prefix}: ${message.slice(0, 160)}`;
+  // A deadline is "stated" only when the upstream named it — a `Retry-After`/
+  // reset header or a duration written in the message. The classifier's own
+  // fallbacks are guesses, and a guess must never take the hard model-scoped
+  // exclusion: it would sideline an (account, model) pair the provider never
+  // actually declared exhausted.
+  const deadlineStated = headerCooldown != null || messageCooldown != null;
   const result = (
     category: AccountErrorCategory,
     status: AccountErrorClassification["status"],
@@ -189,6 +204,7 @@ export function classifyAccountError(
     reason: explanation,
     retryAt,
     mutatesAccount,
+    deadlineStated,
   });
 
   // A price refusal is a verdict on the *request*, not on the account. inferhub
@@ -408,7 +424,21 @@ export function classifyAccountError(
     lower.includes("tpm limit") ||
     lower.includes("rpm limit");
   if (rateSignal) {
-    const cooldownMs = headerCooldown ?? messageCooldown ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS();
+    const statedCooldown = headerCooldown ?? messageCooldown;
+    // An upstream that names its reset window is authoritative. When it names
+    // none, the limit is a momentary throttle and the backoff must be short: a
+    // bare 429 carries no window, and parking the account for the long fallback
+    // turned a blip into a quarter-hour outage once every account serving the
+    // model had been cooled — Google Antigravity's "Resource has been exhausted
+    // (e.g. check quota)" did exactly that while the account's real quota still
+    // read 89% remaining. Only an IP-scoped provider (a credential-less free
+    // tier, where the request's own address is limited and retrying from it
+    // reproduces the refusal no matter which account is selected) keeps the
+    // long fallback, because there backing off the address IS the fix.
+    const unstatedFallback = providerRateLimitIsIpScoped(options?.providerId)
+      ? DEFAULT_RATE_LIMIT_COOLDOWN_MS()
+      : TRANSIENT_ERROR_COOLDOWN_MS();
+    const cooldownMs = statedCooldown ?? unstatedFallback;
     // Same per-account reasoning as quota above: the failing account (or
     // its model, when modelId is present) backs off so routing tries the
     // next candidate instead of hammering the same key.
@@ -511,7 +541,19 @@ async function persistAccountFailure(
     const isThrottle =
       effective.category === "rate_limit_transient" ||
       effective.category === "model_capacity";
-    const shouldModelCooldown = modelId !== undefined && isThrottle;
+    // A throttle only takes the hard, model-scoped exclusion when the upstream
+    // *stated* its reset window. `model_cooldown` is a hard exclusion — it drops
+    // the (account, model) pair from the plan entirely — so it must rest on the
+    // provider's own verdict, never on the classifier's fallback. Google
+    // Antigravity answers a bare 429 "Resource has been exhausted (e.g. check
+    // quota)" with no window; writing a model-scoped entry from the 15-minute
+    // fallback dropped BOTH accounts serving `gemini-3.8-flash` at once and the
+    // gateway answered 503 `accounts_unavailable` for a quarter hour while the
+    // account's real quota still read 89% remaining. An unstated throttle falls
+    // through to the account-wide soft cooldown below: still deprioritized, still
+    // failed over, but the model is not declared exhausted on a guess.
+    const shouldModelCooldown =
+      modelId !== undefined && isThrottle && effective.deadlineStated;
 
     if (shouldModelCooldown) {
       const existing = (account.modelCooldowns as Record<string, string> | null) ?? {};

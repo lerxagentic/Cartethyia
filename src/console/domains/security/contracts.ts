@@ -1,10 +1,10 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import type { AccessDecision } from "../../../security/access-control";
-import type { ModelAbuseBan, ModelStrikeService } from "../../../security/model-abuse";
+import type { ModelStrikeService } from "../../../security/model-abuse";
 import { errorResponse, requireGlobalAdmin } from "../../shared/errors";
 import type { CartethyiaDatabase } from "../../../persistence/postgres";
-import { telemetryEvents, consoleLockouts, adminAuditLog } from "../../../persistence/schema";
-import { desc, sql, and, gte, eq, or, ilike } from "drizzle-orm";
+import { consoleLockouts, adminAuditLog } from "../../../persistence/schema";
+import { sql, gte, eq } from "drizzle-orm";
 
 export interface SecurityRoutesConfig {
   readonly db: CartethyiaDatabase;
@@ -69,7 +69,7 @@ export function createSecurityRoutes(config: SecurityRoutesConfig): Elysia {
         for (const l of lockouts) {
           activeBans.push({
             ip: l.ip,
-            expiresAt: l.lockedUntil?.toISOString(),
+            ...(l.lockedUntil ? { expiresAt: l.lockedUntil.toISOString() } : {}),
             reason: l.reason ?? "Login lockout (Repeated failures)",
           });
         }
