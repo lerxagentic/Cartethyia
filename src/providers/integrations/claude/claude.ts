@@ -26,6 +26,16 @@ import {
 } from "./claude-compatibility";
 import { buildClaudeHeaders, type ClaudeHeaderOptions } from "./claude-credentials";
 import { isRecord } from "../../../protocol/primitives";
+import { sharedClaudeSlowLanes } from "./claude-slow-lane";
+import { planSlowLaneRetry } from "./claude-slow-lane-retry";
+import { sleep } from "../../../transport/failure-policy";
+
+/**
+ * Floor reserved out of the request deadline before a slow-lane wait, so a
+ * wait can never consume the budget the next real attempt needs. Mirrors
+ * `MIN_RETRY_BUDGET_MS` in the attempt loop.
+ */
+const SLOW_LANE_DEADLINE_FLOOR_MS = 15_000;
 import { resolvePromptCacheKey } from "../../operations/session-resolution";
 import { ensureAnthropicBeta, filterClaudeCustomHeaders } from "../claude-messages";
 import {
@@ -302,15 +312,79 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
     const outboundBody =
       patchedBody === undefined ? requestBody : new TextDecoder().decode(patchedBody);
-    yield* sendClaudeMessagesRequest(
-      url,
-      headers,
-      outboundBody,
-      context,
-      request,
-      this.fetchFn,
-      isClaudeCodeOAuth,
+
+    // Slow lane (design doc §5): attach the usage limit when this account's
+    // lane is active, so the upstream knows it may serve us on spare capacity.
+    const accountId = context.credential?.account_id;
+    const slowEligible =
+      isClaudeCodeOAuth && accountId !== undefined && sharedClaudeSlowLanes.isActive(accountId);
+    const slowHeaders: Record<string, string> = slowEligible
+      ? { ...headers, "anthropic-usage-limit": "slow" }
+      : headers;
+
+    const executeSend = () =>
+      sendClaudeMessagesRequest(
+        url,
+        slowHeaders,
+        outboundBody,
+        context,
+        request,
+        this.fetchFn,
+        isClaudeCodeOAuth,
+      );
+
+    try {
+      yield* executeSend();
+      return;
+    } catch (error: unknown) {
+      if (slowEligible && accountId !== undefined) {
+        const waited = await this.planAndWaitSlowLane(error, accountId, context);
+        if (waited) {
+          // Same account, same bytes: retry after waiting
+          yield* executeSend();
+          return;
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Waits out a slow-lane capacity signal and reports whether to retry.
+   */
+  private async planAndWaitSlowLane(
+    error: unknown,
+    accountId: string,
+    context: ProviderDispatchContext,
+  ): Promise<boolean> {
+    const httpStatus =
+      error instanceof GatewayError && typeof error.status === "number" ? error.status : undefined;
+    const decision = planSlowLaneRetry(
+      {
+        ...(httpStatus === undefined ? {} : { httpStatus }),
+        message: error instanceof Error ? error.message : String(error),
+        sentSlow: true,
+        waitedMs: 0,
+        attempts: 0,
+      },
+      sharedClaudeSlowLanes,
+      accountId,
     );
+    if (decision === null) return false;
+
+    const allowance = context.deadline - Date.now() - SLOW_LANE_DEADLINE_FLOOR_MS;
+    if (allowance <= 0) return false;
+    const waitMs = Math.min(decision.delayMs, allowance);
+    log.warn("claude: slow lane busy, waiting for capacity on the same account", {
+      provider: "claude",
+      waitMs,
+    });
+    try {
+      await sleep(waitMs, context.abort_signal);
+    } catch {
+      return false;
+    }
+    return true;
   }
 }
 

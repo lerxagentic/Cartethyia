@@ -6,6 +6,7 @@ import { PROVIDER_COMPATIBILITY_PROFILES } from "../provider-metadata";
 import { defineModel } from "../model-definition";
 import type { ApiKeyProviderSpec } from "./configured-provider";
 import { buildOpenCodeHeaders } from "./opencode-fingerprint";
+import { OPENCODE_TOOL_DEFINITIONS } from "./opencode-tool-definitions";
 /**
  * OpenCode's three API-key tiers, all served from `opencode.ai`:
  *
@@ -86,21 +87,53 @@ export function isFreeTierZenModel(modelId: string): boolean {
 async function opencodeDesktopHeaders(): Promise<Record<string, string>> {
   return buildOpenCodeHeaders();
 }
-/** Canonical agent-tool fingerprint OpenCode Free requires on every dispatch.
- * Upstream rejects tool-less or non-agent requests with `FreeTierError`
- * (upstream 403), so the adapter backfills exactly these two built-in tools
- * when the caller did not declare them. They are plain `ToolDefinition`s —
- * every wire codec serializes them, no per-wire payload patching needed. */
-const FREE_AGENT_TOOLS: readonly { readonly name: string; readonly description: string }[] = [
-  { name: "read", description: "Read a file. Do not call unless the user explicitly asks for a file read." },
-  { name: "bash", description: "Run a shell command. Do not call unless the user explicitly asks to run a command." },
+/**
+ * Every tool the free-tier gate recognises, in the order the client declares
+ * them, with the client's own description and schema.
+ *
+ * The gate compares a recognised tool's definition, not just its name: a stub
+ * carrying the right name is refused. These are therefore verbatim captures —
+ * see `./opencode-tool-definitions` for provenance.
+ */
+const FREE_AGENT_TOOL_NAMES_ORDERED: readonly string[] = [
+  "shell",
+  "glob",
+  "read",
+  "grep",
+  "webfetch",
+  "websearch",
+  "write",
+  "edit",
+  "subagent",
+  "execute",
+  "patch",
+  "question",
+  "skill",
 ];
 
+export const FREE_AGENT_TOOL_NAMES: readonly string[] = FREE_AGENT_TOOL_NAMES_ORDERED;
+
+const FREE_AGENT_TOOL_SCHEMA = {
+  type: "object",
+  properties: {
+    input: { type: "string", description: "Arbitrary input string" },
+  },
+  required: ["input"],
+};
+
 function ensureFreeAgentRequest(request: CanonicalRequest): CanonicalRequest {
-  const names = new Set((request.tools ?? []).map((tool) => tool.name));
-  const missing: ToolDefinition[] = FREE_AGENT_TOOLS.filter((tool) => !names.has(tool.name)).map(
-    (tool) => ({ name: tool.name, description: tool.description, jsonSchema: { type: "object", properties: {} } }),
-  );
+  const present: Record<string, true> = {};
+  for (const tool of request.tools ?? []) present[tool.name] = true;
+  const missing: ToolDefinition[] = FREE_AGENT_TOOL_NAMES_ORDERED.filter(
+    (name) => !present[name],
+  ).map((name) => {
+    const definition = OPENCODE_TOOL_DEFINITIONS[name];
+    return {
+      name,
+      description: definition?.description ?? name,
+      jsonSchema: (definition?.parameters ?? FREE_AGENT_TOOL_SCHEMA) as ToolDefinition["jsonSchema"],
+    };
+  });
   if (missing.length === 0 && request.stream) return request;
   return { ...request, stream: true, tools: [...(request.tools ?? []), ...missing] };
 }
@@ -260,6 +293,7 @@ export const OPENCODE_FREE_MODELS: readonly ModelDefinition[] = [
   defineModel({ id: "nemotron-3.5-lightning-free", providerId: "opencode", wireFamily: "chat", endpoint: `${ZEN_PATH_PREFIX}/chat/completions`, reasoning: true, free: true }),
   // Absent from the snapshot: keep declared limits rather than the generic default.
   defineModel({ id: "longcat-2.5-preview-free", providerId: "opencode", wireFamily: "chat", endpoint: `${ZEN_PATH_PREFIX}/chat/completions`, ctx: 1_000_000, out: 131_072, reasoning: true, free: true }),
+  defineModel({ id: "muse-spark-1.2-contributor-free", providerId: "opencode", wireFamily: "responses", endpoint: `${ZEN_PATH_PREFIX}/responses`, vision: true, reasoning: true, reasoningEfforts: MUSE_SPARK_REASONING_EFFORTS, free: true }),
   systemoneZen("jev-1.13-free", true),
 ];
 

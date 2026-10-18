@@ -11,6 +11,7 @@ import { withUpstreamDeadline } from '../../providers/operations/upstream-deadli
 import { mapClaudeHttpError } from '../../protocol/messages-errors';
 import { isRecord } from '../primitives';
 import { parseClaudeSseStream, claudeResponseToEvents } from '../response/messages';
+import { parseClaudeSlowHeaders, sharedClaudeSlowLanes } from '../../providers/integrations/claude/claude-slow-lane';
 
 export async function* sendClaudeMessagesRequest(
   url: string,
@@ -31,6 +32,16 @@ export async function* sendClaudeMessagesRequest(
       signal,
     }),
   );
+
+  // Observe slow-lane headers on both successful and failed responses
+  const accountId = context.credential?.account_id;
+  if (accountId !== undefined) {
+    const slowSignal = parseClaudeSlowHeaders(response.headers);
+    if (slowSignal !== undefined) {
+      sharedClaudeSlowLanes.observe(accountId, slowSignal);
+    }
+  }
+
   // HTTP status first: a failed status with a JSON body must map through
   // the normal upstream error mapper even when the request asked for a
   // stream. Only `2xx` responses enter SSE parsing below.
