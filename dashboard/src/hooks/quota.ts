@@ -92,20 +92,17 @@ export async function fetchQuotaOverview(signal?: AbortSignal): Promise<QuotaOve
  * otherwise it drops to `idleMs` — so a warming page converges in seconds and
  * a settled page stops hammering the API without any manual reload.
  */
-export function useQuotaOverview(options?: {
-  readonly refreshingMs?: number;
-  readonly idleMs?: number;
-}) {
-  const refreshingMs = options?.refreshingMs ?? 2_000;
-  const idleMs = options?.idleMs ?? 60_000;
+export function useQuotaOverview() {
   return useQuery<QuotaOverview>({
     queryKey: queryKeys.quota.all,
     queryFn: (context) => fetchQuotaOverview(querySignal(context)),
-    staleTime: 0,
-    refetchInterval: (query) => ((query.state.data?.refreshing ?? 0) > 0 ? refreshingMs : idleMs),
+    // No `refetchInterval`, no `refetchOnWindowFocus`, no `refetchOnMount`:
+    // each of those re-reads the quota surface, and the worker owns freshness.
+    staleTime: Infinity,
+    refetchInterval: false,
     refetchIntervalInBackground: false,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
   });
 }

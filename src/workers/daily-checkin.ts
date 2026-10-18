@@ -62,6 +62,24 @@ export function supportsDailyCheckin(providerId: string): boolean {
   return (DAILY_CHECKIN_PROVIDER_IDS as readonly string[]).includes(providerId);
 }
 
+/**
+ * Releases today's slot for many accounts in one round-trip.
+ *
+ * A pipeline is used when Redis is present (one MULTI/DEL for the whole batch).
+ */
+export async function releaseDaySlotsBatch(
+  redis: RedisClient | undefined,
+  dayKey: string,
+  accountIds: readonly string[],
+): Promise<void> {
+  if (accountIds.length === 0 || redis === undefined) return;
+  const pipeline = redis.pipeline();
+  for (const accountId of accountIds) {
+    pipeline.del(ledgerKey(dayKey, accountId));
+  }
+  await pipeline.exec().catch(() => undefined);
+}
+
 export type DailyGrowthPassResult = {
   readonly checkin: DailyCheckinResult;
   readonly report: BuddyActivityReportResult;

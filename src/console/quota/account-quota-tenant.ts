@@ -38,7 +38,6 @@ import {
   listAccountResetCredits,
 } from "../../providers/operations/account-reset-service";
 import {
-  enqueueBackgroundQuotaRefresh,
   pendingQuotaRefreshes,
   toQuotaAccountHealth,
   toQuotaView,
@@ -111,16 +110,6 @@ const QUOTA_REFRESH_CONCURRENCY = 5;
 const QUOTA_REFRESH_MAX_IDS = 100;
 
 /**
- * How stale a cached value may be before the overview asks for a refresh.
- *
- * The cache TTL is 300 s, so a value older than this is close enough to expiry
- * that re-fetching now avoids the page ever rendering an expired entry. The
- * background queue dedupes, so a page that polls every couple of seconds still
- * produces at most one upstream fetch per account per window.
- */
-const QUOTA_STALE_AFTER_MS = 240_000;
-
-/**
  * Registers the tenant-scoped account/quota routes onto `app`. Every route here
  * authorises through `requireTenantScope`, so the caller only ever touches its
  * own tenant's accounts.
@@ -172,7 +161,6 @@ export function registerAccountQuotaTenantRoutes(
         getCachedQuotaEntries(GLOBAL_QUOTA_LENS, globalIds, redis),
       ]);
 
-      const now = Date.now();
       const pending = pendingQuotaRefreshes();
       const providerIds = [...new Set(rows.map((row) => row.providerId))];
       // The dropdown is a quota-page control, not a provider directory: only
@@ -202,16 +190,11 @@ export function registerAccountQuotaTenantRoutes(
       const accounts = rows.map((row) => {
         const entry =
           row.tenantId === null ? globalCache.get(row.id) : ownedCache.get(row.id);
-        const ageMs = entry?.fetchedAt ? now - new Date(entry.fetchedAt).getTime() : Number.POSITIVE_INFINITY;
-        // Providers with no quota collector (custom BYOK endpoints, key-only
-        // providers) intentionally never refresh: there is no upstream quota
-        // endpoint to ask, so enqueueing would only manufacture the
-        // "not available" error the page would then have to explain away.
+        // No background refresh is enqueued here. Opening the page used to
+        // enqueue one for every account whose cached value had aged out, so a
+        // single page open hit every provider's quota endpoint at once. The
+        // periodic sweep owns freshness; this route renders what is cached.
         const canRefresh = providerRegistry.hasQuotaCollector(row.providerId);
-        const wantsRefresh = canRefresh && ageMs >= QUOTA_STALE_AFTER_MS;
-        if (wantsRefresh) {
-          enqueueBackgroundQuotaRefresh(refreshDeps, quotaTargetForAccount(row));
-        }
         const isRefreshing = canRefresh && (pending.has(row.id) || entry === undefined);
         if (isRefreshing) refreshing += 1;
         return {

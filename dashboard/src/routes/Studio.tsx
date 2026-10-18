@@ -858,9 +858,6 @@ export default function ModelLab(): ReactNode {
       for (const call of acc.toolCalls) {
         const callName = call.name ?? "tool";
         setToolStatus(`running ${callName}…`);
-        // Show the call the moment it starts, with no result yet, so the model's
-        // chosen arguments are visible while the tool runs.
-        setLiveToolCalls((prev) => [...prev, { name: callName, args: call.args, running: true }]);
         const result = await executeStudioToolAsync(
           call.name ?? "",
           call.args,
@@ -871,17 +868,8 @@ export default function ModelLab(): ReactNode {
           // operator uploaded instead of asking the model to guess.
           messageAttachments && messageAttachments.length > 0 ? messageAttachments : undefined,
         );
-        setLiveToolCalls((prev) => {
-          const next = [...prev];
-          for (let i = next.length - 1; i >= 0; i -= 1) {
-            const entry = next[i];
-            if (entry && entry.name === callName && entry.running) {
-              next[i] = { name: entry.name, args: entry.args, result, running: false };
-              break;
-            }
-          }
-          return next;
-        });
+        // Show the call only once executed, not while drafting or thinking
+        setLiveToolCalls((prev) => [...prev, { name: callName, args: call.args, result, running: false }]);
         const displayCall = { name: call.name ?? "unknown", args: call.args, result };
         displayCalls.push(displayCall);
         roundCalls.push(displayCall);
