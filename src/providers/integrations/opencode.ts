@@ -42,14 +42,18 @@ const GO_PATH_PREFIX = "/zen/go/v1";
  */
 const KNOWN_FREE_ZEN_IDS: readonly string[] = ["big-pickle"];
 
-/** Free-tier ids that the listing still advertises but upstream refuses. */
+/** Free-tier ids that the listing still advertises but upstream refuses or has deprecated. */
 const UNAVAILABLE_FREE_ZEN_IDS: readonly string[] = [
   "deepseek-v4-flash-free",
-  // Advertised by `/zen/v1/models` and carrying the free-tier suffix, but a
-  // real free-tier dispatch (this adapter's own fingerprint headers, agent
-  // tools) answers 400 "Endpoint is unavailable". Keeping it would re-add a row
-  // that can only fail a probe.
   "ling-3.0-flash-fin-free",
+  "ling-3.1-flash-free",
+  "fledge-alpha-free",
+  "mimo-v2.5-free",
+  "muse-spark-1.3-contributor-free",
+  // Advertised by `/zen/v1/models` and carrying the free-tier suffix, but
+  // upstream answers 503 "Endpoint is unavailable". Excluding it prevents
+  // auto-discovery from re-adding a dead probe row.
+  "glm-5.3-flash-free",
 ];
 
 /**
