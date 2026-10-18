@@ -676,6 +676,8 @@ export interface ProviderRoutingResponse {
    * default to bypass because their transport can't route through an HTTP
    * CONNECT proxy; it stays a real, per-tenant-overridable setting. */
   readonly bypassProxy: boolean;
+  /** Pinned network pool ID; null/undefined means automatic pool selection or direct */
+  readonly assignedPoolId?: string | null;
   /** Built-in API-key upstream User-Agent; OAuth and custom providers retain their own identity. */
   readonly userAgent: string;
 }

@@ -91,6 +91,8 @@ export interface ProviderRoutingSetting {
   /** When true, this (tenant, provider) dispatches direct — candidates
    * never carry `network_pool_ids` regardless of pool availability. */
   readonly bypassProxy: boolean;
+  /** Pinned network pool ID; null/undefined means automatic pool selection or direct */
+  readonly assignedPoolId?: string | null;
 }
 
 /**

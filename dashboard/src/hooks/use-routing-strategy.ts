@@ -46,6 +46,8 @@ export interface RoutingStrategyState {
   readonly refetch: () => void;
   readonly setMaxInflight: (next: number | null) => void;
   readonly setBypassProxy: (next: boolean) => void;
+  readonly assignedPoolId: string | null;
+  readonly setAssignedPoolId: (next: string | null) => void;
 }
 
 export function useRoutingStrategy(providerId: string, allowUserAgent: boolean): RoutingStrategyState {
@@ -54,7 +56,8 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
   const [strategy, setStrategyState] = useState<RoutingStrategy>("fallback");
   const [rotateCount, setRotateCountState] = useState(1);
   const [maxInflight, setMaxInflightState] = useState<number | null>(null);
-  const [bypassProxy, setBypassProxyState] = useState(false);
+  const [bypassProxy, setBypassProxyState] = useState(true);
+  const [assignedPoolId, setAssignedPoolIdState] = useState<string | null>(null);
   const [userAgent, setUserAgentState] = useState("codex_cli_rs/0.156.1");
   const [creditLimitEnabled, setCreditLimitEnabledState] = useState(true);
   const [creditLimit, setCreditLimitState] = useState(200);
@@ -64,7 +67,8 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     setStrategyState(query.data.strategy);
     setRotateCountState(query.data.rotateCount);
     setMaxInflightState(query.data.maxInflight);
-    setBypassProxyState(query.data.bypassProxy);
+    setBypassProxyState(query.data.bypassProxy ?? true);
+    setAssignedPoolIdState((query.data as unknown as { assignedPoolId?: string | null }).assignedPoolId ?? null);
     setUserAgentState(query.data.userAgent);
     setCreditLimitEnabledState(query.data.creditLimitEnabled);
     setCreditLimitState(query.data.creditLimit);
@@ -75,6 +79,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     rotateCount: number;
     maxInflight: number | null;
     bypassProxy: boolean;
+    assignedPoolId: string | null;
     userAgent: string;
     creditLimitEnabled: boolean;
     creditLimit: number;
@@ -88,6 +93,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
           rotateCount: next.rotateCount,
           maxInflight: next.maxInflight,
           bypassProxy: next.bypassProxy,
+          assignedPoolId: next.assignedPoolId,
           creditLimitEnabled: next.creditLimitEnabled,
           creditLimit: next.creditLimit,
           ...(allowUserAgent ? { userAgent: next.userAgent } : {}),
@@ -99,6 +105,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
           setStrategyState(query.data.strategy);
           setRotateCountState(query.data.rotateCount);
           setBypassProxyState(query.data.bypassProxy);
+          setAssignedPoolIdState((query.data as unknown as { assignedPoolId?: string | null }).assignedPoolId ?? null);
           setUserAgentState(query.data.userAgent);
           setCreditLimitEnabledState(query.data.creditLimitEnabled);
           setCreditLimitState(query.data.creditLimit);
@@ -112,6 +119,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       rotateCount,
       maxInflight: next,
       bypassProxy,
+      assignedPoolId,
       userAgent,
       creditLimitEnabled,
       creditLimit,
@@ -123,6 +131,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       rotateCount: next,
       maxInflight,
       bypassProxy,
+      assignedPoolId,
       userAgent,
       creditLimitEnabled,
       creditLimit,
@@ -134,6 +143,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       rotateCount,
       maxInflight,
       bypassProxy,
+      assignedPoolId,
       userAgent: next,
       creditLimitEnabled,
       creditLimit,
@@ -145,6 +155,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       rotateCount,
       maxInflight,
       bypassProxy,
+      assignedPoolId,
       userAgent,
       creditLimitEnabled,
       creditLimit: next,
@@ -155,6 +166,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
     strategy,
     maxInflight,
     bypassProxy,
+    assignedPoolId,
     userAgent,
     creditLimitEnabled,
     creditLimit,
@@ -171,13 +183,31 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
       setUserAgentState(next);
       scheduleUserAgentSave(next);
     },
+    setAssignedPoolId: (next) => {
+      setAssignedPoolIdState(next);
+      const nextBypass = next === null;
+      setBypassProxyState(nextBypass);
+      save({
+        strategy,
+        rotateCount,
+        maxInflight,
+        bypassProxy: nextBypass,
+        assignedPoolId: next,
+        userAgent,
+        creditLimitEnabled,
+        creditLimit,
+      });
+    },
     setBypassProxy: (next) => {
       setBypassProxyState(next);
+      const nextPoolId = next ? null : assignedPoolId;
+      if (next) setAssignedPoolIdState(null);
       save({
         strategy,
         rotateCount,
         maxInflight,
         bypassProxy: next,
+        assignedPoolId: nextPoolId,
         userAgent,
         creditLimitEnabled,
         creditLimit,
@@ -190,6 +220,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
         rotateCount,
         maxInflight,
         bypassProxy,
+        assignedPoolId,
         userAgent,
         creditLimitEnabled: next,
         creditLimit,
@@ -208,6 +239,7 @@ export function useRoutingStrategy(providerId: string, allowUserAgent: boolean):
         rotateCount,
         maxInflight,
         bypassProxy,
+        assignedPoolId,
         userAgent,
         creditLimitEnabled,
         creditLimit,

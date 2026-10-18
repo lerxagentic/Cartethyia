@@ -18,6 +18,7 @@ function mapRow(row: typeof providerRoutingSettings.$inferSelect): ProviderRouti
     creditLimit: row.creditLimit,
     enabled: row.enabled,
     bypassProxy: row.bypassProxy,
+    assignedPoolId: row.assignedPoolId,
     userAgent: row.userAgent,
   };
 }
@@ -90,7 +91,8 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
       creditLimitEnabled: patch.creditLimitEnabled ?? true,
       creditLimit: patch.creditLimit ?? 200,
       enabled: patch.enabled ?? false,
-      bypassProxy: patch.bypassProxy ?? DEFAULT_PROXY_BYPASS_PROVIDER_IDS.has(providerId),
+      bypassProxy: patch.bypassProxy ?? true,
+      assignedPoolId: patch.assignedPoolId ?? null,
       userAgent: patch.userAgent ?? DEFAULT_PROVIDER_USER_AGENT,
     };
     const setClause: Record<string, unknown> = {};
@@ -101,6 +103,7 @@ export class DrizzleProviderDetailStore implements ProviderDetailStore {
     if (patch.creditLimit !== undefined) setClause.creditLimit = patch.creditLimit;
     if (patch.enabled !== undefined) setClause.enabled = patch.enabled;
     if (patch.bypassProxy !== undefined) setClause.bypassProxy = patch.bypassProxy;
+    if (patch.assignedPoolId !== undefined) setClause.assignedPoolId = patch.assignedPoolId;
     if (patch.userAgent !== undefined) setClause.userAgent = patch.userAgent;
     const upserted = await this.db
       .insert(providerRoutingSettings)

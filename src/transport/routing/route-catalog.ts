@@ -257,6 +257,7 @@ const ROUTING_COLUMNS = {
   creditLimit: providerRoutingSettings.creditLimit,
   enabled: providerRoutingSettings.enabled,
   bypassProxy: providerRoutingSettings.bypassProxy,
+  assignedPoolId: providerRoutingSettings.assignedPoolId,
   userAgent: providerRoutingSettings.userAgent,
 } as const;
 
@@ -387,8 +388,15 @@ class RouteCatalogRepository {
         creditLimit: row.creditLimit,
         enabled: row.enabled,
         bypassProxy: row.bypassProxy,
+        assignedPoolId: row.assignedPoolId,
         userAgent: row.userAgent,
       };
+    }
+    /** Resolve assigned pool id if any */
+    function resolveAssignedPoolId(providerId: string, rowTenantId: string | null): string | null | undefined {
+      const tenantSetting = rowTenantId ? providerRouting[rowTenantId]?.[providerId] : undefined;
+      const globalSetting = providerRouting.__global__?.[providerId];
+      return tenantSetting?.assignedPoolId ?? globalSetting?.assignedPoolId;
     }
     /** Tenant-specific setting wins over global; an unconfigured provider
      * falls back to `DEFAULT_PROXY_BYPASS_PROVIDER_IDS`, mirroring the same
@@ -460,17 +468,23 @@ class RouteCatalogRepository {
         }
       | undefined {
       if (!rowTenantId || resolveBypassProxy(providerId, rowTenantId)) return undefined;
-      if (!configuredPoolTenants.has(rowTenantId)) return undefined;
+      const assignedId = resolveAssignedPoolId(providerId, rowTenantId);
       const pools = activePoolsByTenant.get(rowTenantId) ?? [];
+      const eligiblePools = assignedId
+        ? pools.filter((p) => p.id === assignedId)
+        : configuredPoolTenants.has(rowTenantId)
+          ? pools
+          : [];
+      if (eligiblePools.length === 0) return undefined;
       const limits: Record<string, number> = {};
       const weights: Record<string, number> = {};
-      for (const pool of pools) {
+      for (const pool of eligiblePools) {
         limits[pool.id] = pool.maxInflight;
         weights[pool.id] = pool.weight;
       }
       const routing = poolRouting[rowTenantId];
       return {
-        ids: pools.map((pool) => pool.id),
+        ids: eligiblePools.map((pool) => pool.id),
         limits,
         weights,
         ...(routing ? { routing: { tenantId: rowTenantId, ...routing } } : {}),

@@ -14,7 +14,10 @@ import {
   RotateCcw,
   ShieldCheck,
   Trash2,
+  Layers,
 } from "lucide-react";
+import { useProviders } from "../hooks/providers";
+import { useUpdateProviderRouting } from "../hooks/routing";
 import { createContext, memo, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { Badge, type BadgeTone } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -995,8 +998,73 @@ function PoolActionButtons({
   const updatePool = useUpdateNetworkPool();
   const clearCooldown = useClearNetworkPoolCooldown();
   const recoverPool = useRecoverNetworkPool();
+  const providersQuery = useProviders();
+  const updateRouting = useUpdateProviderRouting();
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState("");
+
+  const providers = (providersQuery.data as unknown as { providers?: Array<{ id: string; name?: string }> })?.providers ?? [];
+
+  const handleApply = async () => {
+    if (!selectedProvider) return;
+    try {
+      await updateRouting.mutateAsync({
+        providerId: selectedProvider,
+        request: {
+          enabled: true,
+          bypassProxy: false,
+          assignedPoolId: pool.id,
+        },
+      });
+      toast.success(`Applied proxy to ${selectedProvider}`);
+      setShowAssignModal(false);
+    } catch {
+      toast.error(`Failed to assign proxy to ${selectedProvider}`);
+    }
+  };
+
   return (
     <>
+      <Button
+        size="icon"
+        variant="secondary"
+        icon={<Layers size={12} />}
+        onClick={() => setShowAssignModal(true)}
+        title="Apply this proxy to a provider"
+        label="Apply"
+      />
+      {showAssignModal && (
+        <Dialog
+          open={showAssignModal}
+          onClose={() => setShowAssignModal(false)}
+          title={`Apply Proxy to Provider`}
+        >
+          <Stack gap="12px" style={{ minWidth: "300px", padding: "8px 0" }}>
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+              Route all requests of the chosen provider through <strong>{pool.label || pool.endpoint}</strong>:
+            </div>
+            <Select
+              value={selectedProvider}
+              onValueChange={setSelectedProvider}
+              options={[
+                { value: "", label: "Select a provider..." },
+                ...providers.map((p) => ({ value: p.id, label: p.name || p.id })),
+              ]}
+            />
+            <Inline gap="8px" justify="end" style={{ marginTop: "12px" }}>
+              <Button variant="secondary" onClick={() => setShowAssignModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!selectedProvider || updateRouting.isPending}
+                onClick={() => void handleApply()}
+              >
+                {updateRouting.isPending ? "Applying..." : "Apply Proxy"}
+              </Button>
+            </Inline>
+          </Stack>
+        </Dialog>
+      )}
       {view.cooldowns.length > 0 && (
         <Button
           size="icon"

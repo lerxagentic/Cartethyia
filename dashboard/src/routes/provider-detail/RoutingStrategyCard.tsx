@@ -1,5 +1,6 @@
-import { Cable, Fingerprint, Gauge, Info, Layers, RefreshCw, Repeat } from "lucide-react";
+import { Cable, Fingerprint, Gauge, Globe, Info, Layers, RefreshCw, Repeat } from "lucide-react";
 import type { ReactNode } from "react";
+import { useNetworkPools } from "../../hooks/network";
 import { Button } from "../../components/ui/button";
 import { Card, CardBody, CardHeader } from "../../components/ui/card";
 import { Inline } from "../../components/ui/inline";
@@ -46,6 +47,8 @@ export function RoutingStrategyCard({
   readonly showUserAgent: boolean;
 }): ReactNode {
   const routing = useRoutingStrategy(providerId, showUserAgent);
+  const poolsQuery = useNetworkPools();
+  const availablePools = poolsQuery.data ?? [];
   const showUnsupportedHint = PROXY_UNSUPPORTED_HINT_PROVIDERS.has(providerId);
   const userAgentOptions = USER_AGENT_PRESETS.some((option) => option.value === routing.userAgent)
     ? USER_AGENT_PRESETS
@@ -264,6 +267,49 @@ export function RoutingStrategyCard({
               </div>
             ) : null}
           </div>
+
+          <Row>
+            <div style={{ minWidth: 0 }}>
+              <label htmlFor="routing-proxy-selection">
+                <Inline gap="6px" style={{ fontSize: "13px", fontWeight: 600 }}>
+                  <Globe
+                    size={15}
+                    aria-hidden="true"
+                    style={{
+                      color: !routing.bypassProxy ? "var(--accent)" : "var(--text-tertiary)",
+                      flexShrink: 0,
+                    }}
+                  />
+                  Proxy Assignment
+                </Inline>
+              </label>
+              <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
+                Route requests for this provider through a dedicated proxy or direct connection
+              </div>
+            </div>
+            <div style={{ width: "240px", flexShrink: 0 }}>
+              <Select
+                id="routing-proxy-selection"
+                aria-label="Proxy Assignment"
+                value={routing.bypassProxy ? "direct" : (routing.assignedPoolId ?? "direct")}
+                onValueChange={(val: string) => {
+                  if (val === "direct") {
+                    routing.setAssignedPoolId(null);
+                    routing.setBypassProxy(true);
+                  } else {
+                    routing.setAssignedPoolId(val);
+                  }
+                }}
+                options={[
+                  { value: "direct", label: "Direct (No Proxy)" },
+                  ...availablePools.map((pool) => ({
+                    value: pool.id,
+                    label: `${pool.kind.toUpperCase()} - ${pool.label || pool.endpoint}`,
+                  })),
+                ]}
+              />
+            </div>
+          </Row>
 
           <Row>
             <div style={{ minWidth: 0 }}>

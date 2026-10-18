@@ -489,7 +489,11 @@ export const providerRoutingSettings = pgTable(
     // When true, this provider's requests always dial direct. When false,
     // dispatch automatically selects among every active network pool the
     // tenant owns (least-loaded/non-cooldown) — never an admin-pinned pool.
-    bypassProxy: boolean("bypass_proxy").notNull().default(false),
+    bypassProxy: boolean("bypass_proxy").notNull().default(true),
+    /** Pinned network pool for this provider; null means automatic or direct */
+    assignedPoolId: uuid("assigned_pool_id").references(() => networkPools.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     tenantProviderUnique: uniqueIndex("provider_routing_settings_tenant_provider_idx").on(

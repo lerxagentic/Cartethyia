@@ -133,6 +133,7 @@ const updateRoutingBody = t.Object({
     ),
   ),
   bypassProxy: t.Optional(t.Boolean()),
+  assignedPoolId: t.Optional(t.Nullable(t.String())),
   userAgent: t.Optional(t.String({ minLength: 1, maxLength: 4096 })),
   creditLimitEnabled: t.Optional(t.Boolean()),
   creditLimit: t.Optional(
