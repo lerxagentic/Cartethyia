@@ -368,12 +368,13 @@ export const PROVIDER_CAPABILITIES = {
   hermes: {
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/hermes")).HERMES_SPEC),
     loadModels: async () => (await import("./integrations/hermes")).HERMES_MODELS,
-    loadModelDiscovery: openAIModelDiscovery("hermes", {
-      headers: (credential) => ({
-        authorization: `Bearer ${credential}`,
-        "User-Agent": "hermes-client-v0.13.0",
-      }),
-    }),
+    loadModelDiscovery: async () => async ({ baseUrl, fetcher }: { baseUrl: string; fetcher?: typeof fetch }) => {
+      const { discoverHermesFreeModels } = await import("./integrations/hermes");
+      return discoverHermesFreeModels({
+        baseUrl,
+        ...(fetcher === undefined ? {} : { fetcher }),
+      });
+    },
   },
   openrouter: {
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/openrouter")).OPENROUTER_SPEC),

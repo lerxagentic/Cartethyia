@@ -20,13 +20,18 @@ function injectHermesTags(
 import { defineModel } from "../model-definition";
 import type { ModelDefinition } from "../provider-registry";
 
+import { isRecord } from "../../protocol/primitives";
+import {
+  boundedUpstreamArray,
+  boundedUpstreamNumber,
+  sanitizeUpstreamLabel,
+} from "../provider-metadata";
+
 export const HERMES_MODELS: readonly ModelDefinition[] = [
-  defineModel({ id: "poolside/laguna-s-2.1:free", ctx: 262144, out: 8192, reasoning: true }),
-  defineModel({ id: "poolside/laguna-xs-2.1:free", ctx: 262144, out: 8192, reasoning: true }),
-  defineModel({ id: "tencent/hy3:free", ctx: 262144, out: 8192, vision: true, reasoning: true }),
-  defineModel({ id: "stepfun/step-3.7-flash:free", ctx: 262144, out: 8192, reasoning: true }),
-  defineModel({ id: "upstage/solar-pro4:free", ctx: 524288, out: 8192, reasoning: true }),
-  defineModel({ id: "meituan/longcat-2.0:free", ctx: 1048576, out: 8192, reasoning: true }),
+  defineModel({ id: "poolside/laguna-s-2.1:free", ctx: 262144, out: 131072, reasoning: true }),
+  defineModel({ id: "poolside/laguna-xs-2.1:free", ctx: 262144, out: 32768, reasoning: true }),
+  defineModel({ id: "stepfun/step-3.7-flash:free", ctx: 262144, out: 256000, vision: true, reasoning: true }),
+  defineModel({ id: "meituan/longcat-2.0:free", ctx: 1048756, out: 262144, reasoning: true }),
 ];
 
 
@@ -40,3 +45,73 @@ export const HERMES_SPEC: ApiKeyProviderSpec = {
   endpoint_paths_by_wire_family: {},
   prePayload: injectHermesTags,
 };
+
+/**
+ * Hermes' `/v1/models` is OpenRouter-shaped and needs no credential.
+ */
+export async function discoverHermesFreeModels(options: {
+  readonly baseUrl: string;
+  readonly fetcher?: typeof fetch;
+}): Promise<readonly ModelDefinition[] | null> {
+  const fetcher = options.fetcher ?? fetch;
+  const url = `${options.baseUrl.replace(/\/+$/, "")}/models`;
+  const signal = AbortSignal.timeout(10_000);
+  let response: Response;
+  try {
+    response = await fetcher(url, { headers: { accept: "application/json" }, signal });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return null;
+  }
+  const rec = isRecord(payload) ? payload : undefined;
+  const rows = rec === undefined ? undefined : boundedUpstreamArray(rec["data"]);
+  if (rows === undefined) return null;
+
+  const byId = new Map<string, ModelDefinition>();
+  for (const entry of rows) {
+    if (!isRecord(entry)) continue;
+    const id = sanitizeUpstreamLabel(entry["id"]);
+    if (id === undefined) continue;
+    if (!isFreePriced(entry)) continue;
+
+    const context = boundedUpstreamNumber(entry["context_length"], { min: 1, max: 1_000_000_000 }) ?? undefined;
+    const topProvider = isRecord(entry["top_provider"]) ? entry["top_provider"] : undefined;
+    const output =
+      boundedUpstreamNumber(topProvider?.["max_completion_tokens"], { min: 1, max: 1_000_000_000 }) ?? undefined;
+    const architecture = isRecord(entry["architecture"]) ? entry["architecture"] : undefined;
+    const inputs = boundedUpstreamArray(architecture?.["input_modalities"]) ?? [];
+    const hasImage = inputs.includes("image");
+
+    byId.set(
+      id,
+      defineModel({
+        id,
+        wireFamily: "chat",
+        endpoint: "/v1/chat/completions",
+        ...(context !== undefined ? { ctx: context } : {}),
+        ...(output !== undefined ? { out: output } : {}),
+        vision: hasImage,
+        reasoning: true,
+        toolCall: true,
+        free: true,
+      }),
+    );
+  }
+  return [...byId.values()].sort((a, b) => a.modelId.localeCompare(b.modelId));
+}
+
+function isFreePriced(entry: Record<string, unknown>): boolean {
+  const pricing = entry["pricing"];
+  if (!isRecord(pricing)) return false;
+  const prompt = Number(pricing["prompt"]);
+  const completion = Number(pricing["completion"]);
+  if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return false;
+  return prompt === 0 && completion === 0;
+}

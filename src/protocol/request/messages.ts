@@ -2,6 +2,8 @@
  * Canonical → Claude Messages request builder.
  */
 import type { CanonicalRequest, ContentPart } from "../../transport/canonical-model";
+import { allParts } from "../../transport/canonical-model";
+import { base64DecodedByteLength, clampImage } from "../image-clamp";
 import { buildAnthropicThinkingPayload } from "../../providers/reasoning";
 import { anthropicCacheControl } from "../../transport/translation/cache-controls";
 import {
@@ -74,6 +76,53 @@ function normalizeAnthropicImageMediaType(mediaType: string): string {
     return mediaType;
   }
   return normalized;
+}
+
+function clampedImagePlaceholder(): ClaudeWireObject {
+  return { type: "text", text: "[image omitted: over the provider size limit]" };
+}
+
+function declaredDimension(payload: unknown, key: "width" | "height"): number | undefined {
+  if (!isRecord(payload)) return undefined;
+  const direct = payload[key];
+  if (typeof direct === "number" && Number.isFinite(direct)) return direct;
+  const source = payload["source"];
+  if (isRecord(source)) {
+    const nested = source[key];
+    if (typeof nested === "number" && Number.isFinite(nested)) return nested;
+  }
+  return undefined;
+}
+
+function applyImageClamp(
+  block: ClaudeWireObject,
+  imageCount: number,
+  payload: unknown,
+): ClaudeWireObject {
+  const source = block["source"];
+  const data = isRecord(source) ? source["data"] : undefined;
+  const width = declaredDimension(payload, "width");
+  const height = declaredDimension(payload, "height");
+  const decision = clampImage({
+    ...(typeof data === "string" ? { bytes: base64DecodedByteLength(data) } : {}),
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height }),
+    imageCount,
+  });
+  if (decision.action === "pass") return block;
+  log.warn(
+    decision.action === "reject"
+      ? "claude: image block over the send limit, omitted"
+      : "claude: image block over the dimension limit, omitted (no re-encode in the router)",
+    {
+      action: decision.action,
+      reason: decision.reason,
+      max_dimension_px: decision.maxDimensionPx,
+      max_bytes: decision.maxBytes,
+      image_count: imageCount,
+    },
+  );
+  return clampedImagePlaceholder();
 }
 
 /**
@@ -204,13 +253,22 @@ function anthropicDocumentSource(
 
 function partToClaudeBlock(
   part: ContentPart,
-  ctx?: { seen: Map<string, number>; idMap: Map<string, string>; isOAuth: boolean },
+  ctx?: {
+    seen: Map<string, number>;
+    idMap: Map<string, string>;
+    isOAuth: boolean;
+    imageCount: number;
+  },
 ): ClaudeWireObject | undefined {
   switch (part.kind) {
     case "text":
       return { type: "text", text: toWellFormedString(part.text) };
     case "image":
-      return normalizeImageBlock(part.payload);
+      return applyImageClamp(
+        normalizeImageBlock(part.payload),
+        ctx?.imageCount ?? 1,
+        part.payload,
+      );
     case "file":
       return {
         type: "document",
@@ -365,7 +423,8 @@ export function canonicalToClaudeMessagesPayload(
 ): ClaudeWireObject {
   const seen = new Map<string, number>();
   const idMap = new Map<string, string>();
-  const ctx = { seen, idMap, isOAuth: options.isOAuth ?? false };
+  const imageCount = allParts(request).filter((part) => part.kind === "image").length;
+  const ctx = { seen, idMap, isOAuth: options.isOAuth ?? false, imageCount };
   const messages: ClaudeWireObject[] = [];
   // Anthropic accepts system content only at the top level. Chat `developer`
   // turns and Responses `instructions` have no `developer` role upstream, and

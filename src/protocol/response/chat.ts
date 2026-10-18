@@ -10,6 +10,8 @@ import { mergeResponsesUsage } from "./responses";
 import { usageFromProvider, readReasoningText } from "../../providers/usage";
 import { createToolEmitLedger } from "../../transport/tool-identity";
 
+import { MimoThinkSplitter } from "../../providers/integrations/xiaomi-mimo/think-stream";
+
 export function mapChatStopReason(
   reason: unknown,
 ): "stop" | "length" | "tool_use" | "content_filter" | undefined {
@@ -53,7 +55,29 @@ export function parseChatResponseToEvents(
       });
     }
     const content = message["content"] as string | null;
-    if (content) {
+    if (typeof content === "string" && content.includes("<think")) {
+      const think = new MimoThinkSplitter();
+      const split = think.push(content);
+      const rest = think.flush();
+      const reasoningText = `${split.reasoning}${rest.reasoning}`;
+      const text = `${split.text}${rest.text}`;
+      if (reasoningText.length > 0) {
+        events.push({
+          type: "content_delta",
+          sequence_number: events.length + 1,
+          response_id: id,
+          content: { kind: "reasoning", payload: null, summary: reasoningText },
+        });
+      }
+      if (text.length > 0) {
+        events.push({
+          type: "content_delta",
+          sequence_number: events.length + 1,
+          response_id: id,
+          content: { kind: "text", text },
+        });
+      }
+    } else if (content) {
       events.push({
         type: "content_delta",
         sequence_number: events.length + 1,
@@ -158,6 +182,7 @@ export async function* decodeChatSseStream(
   let lastSeenToolName: string | undefined;
   // Single emission ledger: one entry per logical call.
   const ledger = createToolEmitLedger();
+  const think = new MimoThinkSplitter();
   yield {
     type: "response_start",
     sequence_number: seq++,
@@ -201,29 +226,19 @@ export async function* decodeChatSseStream(
         // text/thinking blocks.
         if (typeof delta?.["content"] === "string" && delta["content"].length > 0) {
           const raw = delta["content"] as string;
-          // Generic thinking models (mimo/minimax/kiro) embed <think> in content
-          if (raw.includes("<think")) {
-            const stripped = raw.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, "");
-            const thinkMatch = raw.match(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/);
-            if (thinkMatch?.[1]) {
-              yield {
-                type: "content_delta",
-                sequence_number: seq++,
-                content: { kind: "reasoning", payload: null, summary: thinkMatch[1] },
-              } as CanonicalEvent;
-            }
-            if (stripped.length > 0) {
-              yield {
-                type: "content_delta",
-                sequence_number: seq++,
-                content: { kind: "text", text: stripped },
-              } as CanonicalEvent;
-            }
-          } else {
+          const split = think.push(raw);
+          if (split.reasoning.length > 0) {
             yield {
               type: "content_delta",
               sequence_number: seq++,
-              content: { kind: "text", text: raw },
+              content: { kind: "reasoning", payload: null, summary: split.reasoning },
+            } as CanonicalEvent;
+          }
+          if (split.text.length > 0) {
+            yield {
+              type: "content_delta",
+              sequence_number: seq++,
+              content: { kind: "text", text: split.text },
             } as CanonicalEvent;
           }
         }
@@ -340,6 +355,21 @@ export async function* decodeChatSseStream(
       );
     }
   }
+  const rest = think.flush();
+  if (rest.reasoning.length > 0) {
+    yield {
+      type: "content_delta",
+      sequence_number: seq++,
+      content: { kind: "reasoning", payload: null, summary: rest.reasoning },
+    } as CanonicalEvent;
+  }
+  if (rest.text.length > 0) {
+    yield {
+      type: "content_delta",
+      sequence_number: seq++,
+      content: { kind: "text", text: rest.text },
+    } as CanonicalEvent;
+  }
   const chatStopReason = mapChatStopReason(finishReason);
   const chatProviderStopReason =
     typeof finishReason === "string" ? finishReason : undefined;
@@ -354,7 +384,7 @@ export async function* decodeChatSseStream(
       : finishReason === "error" || finishReason === "failed" || truncated
         ? "failed"
         : "complete",
-    stopReason: chatStopReason,
+    stopReason: truncated && signal?.aborted !== true ? "error" : chatStopReason,
     providerStopReason: chatProviderStopReason,
     usage: usageFromProvider(rawUsage),
   });
